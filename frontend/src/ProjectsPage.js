@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from './ThemeContext';
 import { useAuth } from './context/AuthContext';
@@ -20,11 +20,7 @@ function ProjectsPage() {
   const [sinAccesoProyectos, setSinAccesoProyectos] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    loadProjects();
-  }, []);
-
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async () => {
     try {
       setLoading(true);
       setSinAccesoProyectos(false);
@@ -56,7 +52,11 @@ function ProjectsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [esAdminGlobal, refreshProfile]);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
 
   if (loading || checkingAccess) {
     return (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { alternativas as alternativasApi, escenarios as escenariosApi } from '../../api';
 import {
   CALC_METHOD_MAUT,
@@ -143,13 +143,16 @@ function UTAConfig({ config, onChange, disabled, proyectoId }) {
   const [alternativas, setAlternativas] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const prefs = config.preferences || {
-    ranking: [],
-    preferred_pairs: [],
-    indifference_pairs: [],
-  };
+  const prefs = useMemo(
+    () => config.preferences || {
+      ranking: [],
+      preferred_pairs: [],
+      indifference_pairs: [],
+    },
+    [config.preferences],
+  );
 
-  const setRanking = (ranking) => {
+  const setRanking = useCallback((ranking) => {
     onChange({
       ...config,
       preferences: {
@@ -158,7 +161,7 @@ function UTAConfig({ config, onChange, disabled, proyectoId }) {
         preferred_pairs: [],
       },
     });
-  };
+  }, [config, onChange, prefs]);
 
   useEffect(() => {
     if (!proyectoId) {
@@ -193,7 +196,7 @@ function UTAConfig({ config, onChange, disabled, proyectoId }) {
     if (JSON.stringify(merged) !== JSON.stringify(prefs.ranking || [])) {
       setRanking(merged);
     }
-  }, [alternativas, disabled]);
+  }, [alternativas, disabled, prefs.ranking, setRanking]);
 
   const move = (index, direction) => {
     const next = [...ranking];

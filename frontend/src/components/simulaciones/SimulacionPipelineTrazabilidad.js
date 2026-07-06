@@ -10,13 +10,11 @@ function SimulacionPipelineTrazabilidad({ resultado }) {
     return enrichPasosForDisplay(pasos);
   }, [resultado]);
 
-  const stepsKey = steps.map((s) => s.id).join(',');
-
   React.useEffect(() => {
     if (steps.length) {
       setExpandedIds(new Set(steps.map((s) => s.id)));
     }
-  }, [stepsKey]);
+  }, [steps]);
 
   const onToggleStep = (id) => {
     setExpandedIds((prev) => {

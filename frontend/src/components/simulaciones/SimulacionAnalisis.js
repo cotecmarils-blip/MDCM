@@ -4,7 +4,7 @@ import SimulacionRecibo from './SimulacionRecibo';
 import { flattenAuditLines, formatValor, traceNodeKey } from './simulacionTraceUtils';
 
 function SimulacionAnalisis({ resultado, initialAltId = null }) {
-  const alternativas = resultado?.alternativas || [];
+  const alternativas = useMemo(() => resultado?.alternativas || [], [resultado?.alternativas]);
   const [altId, setAltId] = useState(initialAltId ?? alternativas[0]?.id ?? null);
   const [dimId, setDimId] = useState(null);
   const [view, setView] = useState('piramide');
@@ -17,7 +17,7 @@ function SimulacionAnalisis({ resultado, initialAltId = null }) {
     [alternativas, altId],
   );
 
-  const dimensiones = alt?.dimensiones || [];
+  const dimensiones = useMemo(() => alt?.dimensiones || [], [alt?.dimensiones]);
 
   useEffect(() => {
     if (initialAltId != null) setAltId(initialAltId);

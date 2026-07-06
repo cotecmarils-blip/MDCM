@@ -13,7 +13,7 @@ const VIEWS = {
 };
 
 function AlternativasPanel({ proyectoId }) {
-  const { permissions, isProveedor, canCreateAlternativa, canWrite } =
+  const { isProveedor, canCreateAlternativa, canWrite } =
     useProjectPermissions(proyectoId);
   const canViewAlternativas = !isProveedor;
 

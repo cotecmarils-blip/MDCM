@@ -209,7 +209,7 @@ function PesoGrupoAhpPanel({
   }, []);
 
   const ahpDisponible = payload?.ahp_disponible;
-  const activos = payload?.hermanos_activos || [];
+  const activos = useMemo(() => payload?.hermanos_activos || [], [payload?.hermanos_activos]);
   const nombresById = useMemo(() => {
     const map = {};
     for (const h of activos) map[h.nodo_id] = h.nombre;

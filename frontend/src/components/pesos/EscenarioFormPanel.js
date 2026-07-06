@@ -19,7 +19,7 @@ function EscenarioFormPanel({
     omoe: '',
   });
   const [ramaEvaluacion, setRamaEvaluacion] = useState('');
-  const [omoeNombre, setOmoeNombre] = useState('');
+  const [, setOmoeNombre] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 

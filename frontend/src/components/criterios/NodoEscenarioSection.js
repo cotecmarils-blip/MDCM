@@ -145,7 +145,7 @@ const NodoEscenarioSection = forwardRef(function NodoEscenarioSection(
     };
   }, [hermanosView, modoGrupo]);
 
-  const applyResponse = (data) => {
+  const applyResponse = useCallback((data) => {
     setConfig(data);
     setForm({
       peso: data.peso ?? 0,
@@ -163,7 +163,7 @@ const NodoEscenarioSection = forwardRef(function NodoEscenarioSection(
       descendientesActivados: data.descendientes_activados ?? 0,
       grupoPesosAplicados: false,
     };
-  };
+  }, [onDirtyChange]);
 
   const handleGrupoApplied = (grupoData) => {
     setModoGrupo(grupoData.modo || 'ahp');
@@ -186,6 +186,7 @@ const NodoEscenarioSection = forwardRef(function NodoEscenarioSection(
     form,
     nodoId,
     propagarATodos,
+    applyResponse,
   ]);
 
   useImperativeHandle(

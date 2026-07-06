@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { fetchDrawioDraftXml } from '../components/criterios/drawioExportApi';
 
 const DRAWIO_EMBED =

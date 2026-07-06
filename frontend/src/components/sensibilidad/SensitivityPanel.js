@@ -45,9 +45,9 @@ function SensitivityPanel({ proyectoId }) {
     setWeights((prev) => redistributeWeights(prev, criterion, newWeight));
   };
 
-  const alternatives = payload?.alternatives || [];
-  const criteria = payload?.criteria || [];
-  const localPriorities = payload?.localPriorities || {};
+  const alternatives = useMemo(() => payload?.alternatives || [], [payload?.alternatives]);
+  const criteria = useMemo(() => payload?.criteria || [], [payload?.criteria]);
+  const localPriorities = useMemo(() => payload?.localPriorities || {}, [payload?.localPriorities]);
 
   const ranking = useMemo(
     () => calculateAllOveralls(alternatives, weights, localPriorities),

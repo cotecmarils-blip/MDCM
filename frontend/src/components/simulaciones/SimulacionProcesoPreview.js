@@ -79,8 +79,6 @@ function SimulacionProcesoPreview({
     [preview?.pasos, unlockedIds],
   );
 
-  const stepsKey = steps.map((s) => `${s.id}:${s.estado}`).join('|');
-
   useEffect(() => {
     if (!steps.length) return;
     if (focusStepId) {
@@ -94,7 +92,7 @@ function SimulacionProcesoPreview({
         ),
       );
     }
-  }, [focusStepId, stepsKey]);
+  }, [focusStepId, steps]);
 
   const onToggleStep = (id) => {
     setExpandedIds((prev) => {

@@ -44,7 +44,7 @@ function CriterioDetailPanel({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
   const [nodeDirty, setNodeDirty] = useState(false);
-  const [escenarioDirty, setEscenarioDirty] = useState(false);
+  const [, setEscenarioDirty] = useState(false);
   const [escenarioCanSave, setEscenarioCanSave] = useState(false);
   const escenarioRef = useRef(null);
 

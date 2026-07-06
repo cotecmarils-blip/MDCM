@@ -40,7 +40,7 @@ function SimulacionSensibilidadCalculo({ proyectoId, resultado }) {
 
   const bootstrap = useMemo(
     () => buildSensibilidadBootstrap(resultado),
-    [resultado, historialKey],
+    [resultado],
   );
 
   const dimensiones = useMemo(
@@ -79,9 +79,9 @@ function SimulacionSensibilidadCalculo({ proyectoId, resultado }) {
     || MADM_LABELS[resultado?.opciones_calculo?.metodo_madm]
     || 'MADM';
 
-  const criteria = view?.dimensions || [];
-  const alternatives = view?.alternatives || [];
-  const localPriorities = view?.local_priorities || {};
+  const criteria = useMemo(() => view?.dimensions || [], [view?.dimensions]);
+  const alternatives = useMemo(() => view?.alternatives || [], [view?.alternatives]);
+  const localPriorities = useMemo(() => view?.local_priorities || {}, [view?.local_priorities]);
 
   const weights = useMemo(
     () => resolveDisplayWeights(criteria, bootstrap, model, userWeights),
@@ -122,7 +122,7 @@ function SimulacionSensibilidadCalculo({ proyectoId, resultado }) {
     setSweepError(null);
     setTornadoError(null);
     setError(null);
-  }, [historialKey]);
+  }, [historialKey, resultado]);
 
   useEffect(() => {
     if (!proyectoId || !resultado || !bootstrap) {
@@ -162,7 +162,7 @@ function SimulacionSensibilidadCalculo({ proyectoId, resultado }) {
     return () => {
       cancelled = true;
     };
-  }, [proyectoId, resultado, historialKey, bootstrap?.dimensions?.length]);
+  }, [proyectoId, resultado, historialKey, bootstrap]);
 
   const fetchRanking = useCallback((nextWeights, criteriaList) => {
     if (!proyectoId || !resultado || !criteriaList?.length) return;
@@ -267,13 +267,13 @@ function SimulacionSensibilidadCalculo({ proyectoId, resultado }) {
       });
 
     return undefined;
-  }, [gradientDimId, proyectoId, historialKey, bootstrap?.dimensions?.length]);
+  }, [gradientDimId, proyectoId, historialKey, bootstrap, resultado]);
 
   const tornadoAltName = selectedAlt?.name || selectedAlt?.id || selectedAltId;
 
   const tornadoPreview = useMemo(
     () => buildTornadoPreview(criteria, weights, localPriorities, tornadoAltName),
-    [criteria, weights, localPriorities, tornadoAltName, weightsKey],
+    [criteria, weights, localPriorities, tornadoAltName],
   );
 
   const tornadoDisplay = useMemo(() => {

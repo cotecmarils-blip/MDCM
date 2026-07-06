@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../ThemeContext';
 import { alternativas, capacidades, caracteristicas, caracteristicasPlantilla } from '../api';
 import { buildAlternativaFormData } from '../utils/media';
@@ -64,24 +64,7 @@ function AlternativaDetailPanel({
     setIsEditing(false);
   }, [alternativaId, isNew]);
 
-  const populateFromAlternativa = (alt) => {
-    setExisting(alt);
-    setFormData({
-      nombre: alt.nombre || '',
-      descripcion: alt.descripcion || '',
-      referencia: alt.referencia || '',
-      costo: alt.costo ?? '',
-      costo_unidad: alt.costo_unidad || 'MUSD',
-      foto: null,
-      anexo: null,
-    });
-    setCapacidadesList((alt.capacidades || []).map(mapCapacidad));
-    setRemovedCapacidadIds([]);
-    setRemovedCaracteristicaIds([]);
-    loadPlantillasForAlternativa(alt.caracteristicas || []);
-  };
-
-  const loadPlantillasForAlternativa = async (existingCaracteristicas = []) => {
+  const loadPlantillasForAlternativa = useCallback(async (existingCaracteristicas = []) => {
     try {
       const res = await caracteristicasPlantilla.getByProyecto(proyectoId);
       const plantillas = res.data || [];
@@ -96,7 +79,24 @@ function AlternativaDetailPanel({
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [proyectoId, isNew]);
+
+  const populateFromAlternativa = useCallback((alt) => {
+    setExisting(alt);
+    setFormData({
+      nombre: alt.nombre || '',
+      descripcion: alt.descripcion || '',
+      referencia: alt.referencia || '',
+      costo: alt.costo ?? '',
+      costo_unidad: alt.costo_unidad || 'MUSD',
+      foto: null,
+      anexo: null,
+    });
+    setCapacidadesList((alt.capacidades || []).map(mapCapacidad));
+    setRemovedCapacidadIds([]);
+    setRemovedCaracteristicaIds([]);
+    loadPlantillasForAlternativa(alt.caracteristicas || []);
+  }, [loadPlantillasForAlternativa]);
 
   useEffect(() => {
     if (isNew) {
@@ -135,7 +135,7 @@ function AlternativaDetailPanel({
       }
     };
     load();
-  }, [alternativaId, isNew]);
+  }, [alternativaId, isNew, loadPlantillasForAlternativa, populateFromAlternativa]);
 
   useEffect(() => {
     if (!plantillasVersion) return;
@@ -144,7 +144,7 @@ function AlternativaDetailPanel({
         isNew ? [] : existing?.caracteristicas || []
       );
     }
-  }, [plantillasVersion, proyectoId, isNew, isEditing, existing]);
+  }, [plantillasVersion, isNew, isEditing, existing, loadPlantillasForAlternativa]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;

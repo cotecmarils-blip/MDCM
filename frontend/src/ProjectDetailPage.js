@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { proyectos } from './api';
 import Sidebar from './layout/Sidebar';
@@ -37,7 +37,7 @@ function ProjectDetailPage() {
 
   const visibleSections = useMemo(
     () => ALL_SECTIONS.filter((section) => canAccessSection(section)),
-    [permissions],
+    [canAccessSection],
   );
 
   useEffect(() => {
@@ -45,11 +45,8 @@ function ProjectDetailPage() {
       setActiveSection(visibleSections[0]);
     }
   }, [visibleSections, activeSection]);
-  useEffect(() => {
-    loadProyecto();
-  }, [id]);
 
-  const loadProyecto = async () => {
+  const loadProyecto = useCallback(async () => {
     try {
       setLoading(true);
       const response = await proyectos.getById(id);
@@ -61,7 +58,11 @@ function ProjectDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    loadProyecto();
+  }, [loadProyecto]);
 
   const renderMainContent = () => {
     switch (activeSection) {
