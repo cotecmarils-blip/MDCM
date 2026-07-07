@@ -1,5 +1,5 @@
 """
-Carga un caso funcional completo para probar MDCM (OMOE, requisitos, alternativas, pesos).
+Carga un caso funcional completo para probar MCDM (OMOE, requisitos, alternativas, pesos).
 
 Uso:
   python manage.py seed_caso_demo
@@ -192,7 +192,7 @@ class Command(BaseCommand):
                     'Integra misiones científicas y de apoyo logístico con ponderación jerárquica.'
                 ),
                 'version': '1.0',
-                'responsable': 'Equipo MDCM / Selección Naval',
+                'responsable': 'Equipo MCDM / Selección Naval',
                 'estado': 'Activo',
                 'rango_minimo': Decimal('0'),
                 'rango_maximo': Decimal('100'),

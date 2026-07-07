@@ -3,7 +3,7 @@
 ║              Material-UI → Tailwind CSS en 100% del proyecto               ║
 ╚════════════════════════════════════════════════════════════════════════════╝
 
-📌 UBICACIÓN: C:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend
+📌 UBICACIÓN: C:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -50,7 +50,7 @@
   Abre CMD (Win+R → cmd → Enter) y corre:
 
   ┌────────────────────────────────────────────────────────────────────────┐
-  │ cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend" │
+  │ cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend" │
   └────────────────────────────────────────────────────────────────────────┘
 
   Luego instala dependencias:

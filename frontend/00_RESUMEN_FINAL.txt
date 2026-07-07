@@ -8,8 +8,8 @@
 ╚════════════════════════════════════════════════════════════════════════════╝
 
 
-📍 PROYECTO: MDCM Frontend
-📍 UBICACIÓN: C:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend
+📍 PROYECTO: MCDM Frontend
+📍 UBICACIÓN: C:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend
 
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -102,7 +102,7 @@
    ────────────────────────────────────────────
    Copia y pega en la terminal:
 
-   cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend"
+   cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend"
 
 
    Paso 3: Instala las dependencias
@@ -230,7 +230,7 @@
 
    ┌─────────────────────────────────────────────────────────────────┐
    │ cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\    │
-   │ MDCM\frontend"                                                  │
+   │ MCDM\frontend"                                                  │
    │ npm install                                                      │
    │ npm start                                                        │
    └─────────────────────────────────────────────────────────────────┘

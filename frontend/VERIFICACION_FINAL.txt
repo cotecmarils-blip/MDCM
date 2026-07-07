@@ -107,7 +107,7 @@ Responsive:
 
 PASOS FINALES:
 
-1. Abre terminal en: C:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend
+1. Abre terminal en: C:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend
 
 2. Ejecuta:
    npm install

@@ -577,14 +577,14 @@ def build_drawio_xml(trees: list[dict], *, diagram_name: str = 'Mapa de criterio
         'mxfile',
         {
             'host': 'app.diagrams.net',
-            'agent': 'MDCM',
+            'agent': 'MCDM',
             'version': '22.1.0',
             'type': 'device',
         },
     )
     _build_diagram_element(
         mxfile,
-        diagram_id='mdcm-diagram',
+        diagram_id='MCDM-diagram',
         diagram_name=diagram_name,
         trees=trees,
     )
@@ -598,13 +598,13 @@ def build_drawio_xml_multipage(pages: list[dict]) -> str:
         'mxfile',
         {
             'host': 'app.diagrams.net',
-            'agent': 'MDCM',
+            'agent': 'MCDM',
             'version': '22.1.0',
             'type': 'device',
         },
     )
     for idx, page in enumerate(pages):
-        diagram_id = f'mdcm-page-{idx + 1}-{uuid.uuid4().hex[:8]}'
+        diagram_id = f'MCDM-page-{idx + 1}-{uuid.uuid4().hex[:8]}'
         _build_diagram_element(
             mxfile,
             diagram_id=diagram_id,

@@ -5,8 +5,8 @@
 
 🎯 ESTADO: LISTO PARA EJECUTAR
 
-📍 Proyecto: MDCM Frontend
-📍 Ruta: C:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend
+📍 Proyecto: MCDM Frontend
+📍 Ruta: C:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -70,7 +70,7 @@
       Win+R → cmd → Enter
 
    2. Navega a la carpeta:
-      cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend"
+      cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend"
 
    3. Instala dependencias:
       npm install

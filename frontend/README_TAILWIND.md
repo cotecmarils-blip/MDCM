@@ -34,7 +34,7 @@ Se reemplazó completamente el framework de estilos Material-UI con Tailwind CSS
 ## Para ejecutar
 
 ```bash
-cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend"
+cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend"
 npm install
 npm start
 ```

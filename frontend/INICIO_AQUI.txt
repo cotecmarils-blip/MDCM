@@ -3,8 +3,8 @@
                Material-UI → Tailwind CSS - 100% COMPLETADO
 ════════════════════════════════════════════════════════════════════════════════
 
-PROYECTO: MDCM Frontend
-UBICACIÓN: C:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend
+PROYECTO: MCDM Frontend
+UBICACIÓN: C:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend
 
 ════════════════════════════════════════════════════════════════════════════════
 
@@ -109,7 +109,7 @@ Tema: OSCURO MODERNO
 1. Abre Terminal (Win+R → cmd → Enter)
 
 2. Navega a la carpeta:
-   cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend"
+   cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend"
 
 3. Instala dependencias:
    npm install
@@ -230,7 +230,7 @@ Componentes React actualizados y testeados.
 
 🚀 ¡EJECUTA AHORA!
 
-cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend"
+cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend"
 npm install
 npm start
 

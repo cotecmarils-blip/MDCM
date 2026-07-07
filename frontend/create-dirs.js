@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const baseDir = 'c:\\Users\\btovar\\OneDrive - Cotecmar\\Escritorio\\CODIGOS\\MDCM\\frontend\\src';
+const baseDir = 'c:\\Users\\btovar\\OneDrive - Cotecmar\\Escritorio\\CODIGOS\\MCDM\\frontend\\src';
 
 const dirs = [
   path.join(baseDir, 'context'),

@@ -34,10 +34,10 @@ from .models import (
     ProyectoNivelArbol,
 )
 from .nodo_escenario_service import seed_arbol_config_for_escenario
-from .oceanographic_import import _pydecision_uf_to_mdcm
+from .oceanographic_import import _pydecision_uf_to_MCDM
 from .peso_service import _q2
 
-# Nombre de rama del primer nivel del JSON → rama de dimensión MDCM.
+# Nombre de rama del primer nivel del JSON → rama de dimensión MCDM.
 BRANCH_RAMA = {
     'Effectiveness': RAMA_OMOE,
     'Cost': RAMA_OMOC,
@@ -230,12 +230,12 @@ def _build_level(
             aplica=True,
         )
         if es_hoja:
-            mdcm = _pydecision_uf_to_mdcm(child.get('utility_function'))
+            MCDM = _pydecision_uf_to_MCDM(child.get('utility_function'))
             kwargs.update(
-                familia_funciones=mdcm['familia_funciones'],
-                tipo_criterio=mdcm['tipo_criterio'],
-                tipo_dato=mdcm['tipo_dato'],
-                parametros_funcion=mdcm['parametros_funcion'],
+                familia_funciones=MCDM['familia_funciones'],
+                tipo_criterio=MCDM['tipo_criterio'],
+                tipo_dato=MCDM['tipo_dato'],
+                parametros_funcion=MCDM['parametros_funcion'],
             )
 
         nodo = NodoArbol.objects.create(**kwargs)

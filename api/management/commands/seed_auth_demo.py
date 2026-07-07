@@ -80,7 +80,7 @@ class Command(BaseCommand):
             admin, created = User.objects.get_or_create(
                 username='admin',
                 defaults={
-                    'email': 'admin@mdcm.local',
+                    'email': 'admin@MCDM.local',
                     'is_staff': True,
                     'is_superuser': True,
                 },

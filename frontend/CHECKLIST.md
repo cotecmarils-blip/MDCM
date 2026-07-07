@@ -33,7 +33,7 @@ Presiona: Enter
 
 ### 2. Navega a la carpeta
 ```cmd
-cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend"
+cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend"
 ```
 
 ### 3. Instala dependencias

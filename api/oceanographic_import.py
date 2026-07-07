@@ -31,7 +31,7 @@ def _collect_attributes(node: dict, acc: list[dict] | None = None) -> list[dict]
     return acc
 
 
-def _pydecision_uf_to_mdcm(uf: dict | None) -> dict[str, Any]:
+def _pydecision_uf_to_MCDM(uf: dict | None) -> dict[str, Any]:
     if not uf:
         return {
             'familia_funciones': 'min_max',
@@ -97,10 +97,10 @@ def sync_oceanographic_constantes_escenario(
         if not nodo:
             continue
 
-        mdcm = _pydecision_uf_to_mdcm(attr.get('utility_function'))
-        nodo.familia_funciones = mdcm['familia_funciones']
-        nodo.tipo_criterio = mdcm['tipo_criterio']
-        nodo.tipo_dato = mdcm['tipo_dato']
+        MCDM = _pydecision_uf_to_MCDM(attr.get('utility_function'))
+        nodo.familia_funciones = MCDM['familia_funciones']
+        nodo.tipo_criterio = MCDM['tipo_criterio']
+        nodo.tipo_dato = MCDM['tipo_dato']
         nodo.parametros_funcion = {}
         nodo.save(update_fields=[
             'familia_funciones',
@@ -116,14 +116,14 @@ def sync_oceanographic_constantes_escenario(
             defaults={
                 'peso': nodo.peso,
                 'aplica': True,
-                'tipo_criterio': mdcm['tipo_criterio'],
-                'familia_funciones': mdcm['familia_funciones'],
-                'parametros_funcion': mdcm['parametros_funcion'],
+                'tipo_criterio': MCDM['tipo_criterio'],
+                'familia_funciones': MCDM['familia_funciones'],
+                'parametros_funcion': MCDM['parametros_funcion'],
             },
         )
-        cfg.tipo_criterio = mdcm['tipo_criterio']
-        cfg.familia_funciones = mdcm['familia_funciones']
-        cfg.parametros_funcion = mdcm['parametros_funcion']
+        cfg.tipo_criterio = MCDM['tipo_criterio']
+        cfg.familia_funciones = MCDM['familia_funciones']
+        cfg.parametros_funcion = MCDM['parametros_funcion']
         cfg.aplica = True
         cfg.save(update_fields=[
             'tipo_criterio',
@@ -211,7 +211,7 @@ def ensure_oceanographic_eval_nodes(
             name = attr['name']
             if name in existing_names:
                 continue
-            mdcm = _pydecision_uf_to_mdcm(attr.get('utility_function'))
+            MCDM = _pydecision_uf_to_MCDM(attr.get('utility_function'))
             NodoArbol.objects.create(
                 omoe=omoe,
                 parent=root,
@@ -225,10 +225,10 @@ def ensure_oceanographic_eval_nodes(
                     tipo_nivel_id=nivel_hoja.id,
                 ),
                 aplica=True,
-                familia_funciones=mdcm['familia_funciones'],
+                familia_funciones=MCDM['familia_funciones'],
                 parametros_funcion={},
-                tipo_dato=mdcm['tipo_dato'],
-                tipo_criterio=mdcm['tipo_criterio'],
+                tipo_dato=MCDM['tipo_dato'],
+                tipo_criterio=MCDM['tipo_criterio'],
             )
             created += 1
 

@@ -1,7 +1,7 @@
-export const STORAGE_ACCESS = 'mdcm_access_token';
-export const STORAGE_REFRESH = 'mdcm_refresh_token';
-export const STORAGE_USER = 'mdcm_user';
-export const STORAGE_AUTH_MESSAGE = 'mdcm_auth_message';
+export const STORAGE_ACCESS = 'MCDM_access_token';
+export const STORAGE_REFRESH = 'MCDM_refresh_token';
+export const STORAGE_USER = 'MCDM_user';
+export const STORAGE_AUTH_MESSAGE = 'MCDM_auth_message';
 
 export const ACCESS_DENIED_CODES = ['access_expired', 'access_disabled', 'no_access'];
 

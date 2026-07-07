@@ -3,7 +3,7 @@
 ║                          COMPLETADA EXITOSAMENTE                             ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
-📍 UBICACIÓN: c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend
+📍 UBICACIÓN: c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -23,7 +23,7 @@
 1️⃣  Abre CMD o PowerShell en Windows
 
 2️⃣  Navega a la carpeta frontend:
-    cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend"
+    cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend"
 
 3️⃣  Instala las dependencias:
     npm install

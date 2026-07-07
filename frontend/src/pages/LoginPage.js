@@ -54,7 +54,7 @@ function LoginPage() {
       const detail = err.response?.data?.detail;
       setError(detail || 'No se pudo iniciar sesión. Verifica usuario y contraseña.');
       if (err.response?.data?.code) {
-        sessionStorage.setItem('mdcm_access_denied_code', err.response.data.code);
+        sessionStorage.setItem('MCDM_access_denied_code', err.response.data.code);
       }
     } finally {
       setSubmitting(false);
@@ -77,7 +77,7 @@ function LoginPage() {
         }`}
       >
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold">MDCM</h1>
+          <h1 className="text-2xl font-bold">MCDM</h1>
           <p className={`mt-2 text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
             Inicia sesión para acceder a los proyectos de selección
           </p>

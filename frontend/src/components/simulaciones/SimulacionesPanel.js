@@ -215,7 +215,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [historialCollapsed, setHistorialCollapsed] = useState(() => {
     try {
-      return localStorage.getItem('mdcm.simulaciones.historialCollapsed') === '1';
+      return localStorage.getItem('MCDM.simulaciones.historialCollapsed') === '1';
     } catch {
       return false;
     }
@@ -242,7 +242,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem('mdcm.simulaciones.historialCollapsed', historialCollapsed ? '1' : '0');
+      localStorage.setItem('MCDM.simulaciones.historialCollapsed', historialCollapsed ? '1' : '0');
     } catch {
       /* ignore */
     }

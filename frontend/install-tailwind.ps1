@@ -1,4 +1,4 @@
-cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend"
+cd "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend"
 
 Write-Host "Installing Tailwind CSS dependencies..." -ForegroundColor Green
 npm install -D tailwindcss postcss autoprefixer

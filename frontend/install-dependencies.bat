@@ -1,5 +1,5 @@
 @echo off
-cd /d "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MDCM\frontend"
+cd /d "c:\Users\btovar\OneDrive - Cotecmar\Escritorio\CODIGOS\MCDM\frontend"
 echo Installing dependencies...
 call npm install
 if errorlevel 1 (
