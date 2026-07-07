@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import { useTheme } from '../../ThemeContext';
-import { getSimulacionChartBgColors } from './simulacionChartTheme';
 
 export default function SimulacionSensibilidadGradientChart({
   sweep,
@@ -10,9 +9,9 @@ export default function SimulacionSensibilidadGradientChart({
   metodoLabel,
   currentWeightPct,
   loading = false,
+  plotBgColor = '#f7f7ef',
 }) {
   const { isDark } = useTheme();
-  const chartBg = getSimulacionChartBgColors(isDark);
 
   const traces = useMemo(() => {
     if (!sweep?.length) return [];
@@ -59,8 +58,8 @@ export default function SimulacionSensibilidadGradientChart({
           autosize: true,
           height: 340,
           margin: { l: 48, r: 24, t: 24, b: 48 },
-          paper_bgcolor: chartBg.paper_bgcolor,
-          plot_bgcolor: chartBg.plot_bgcolor,
+          paper_bgcolor: 'transparent',
+          plot_bgcolor: plotBgColor,
           font: { color: isDark ? '#e5e7eb' : '#374151', size: 11 },
           xaxis: {
             title: `Peso de ${dimension} (%)`,

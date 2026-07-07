@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import { useTheme } from '../../ThemeContext';
 import { buildPerformanceSeries, coerceWeightsMap } from './simulacionSensibilidadUtils';
-import { getSimulacionChartBgColors } from './simulacionChartTheme';
 
 export default function SimulacionSensibilidadPerformanceChart({
   criteria,
@@ -12,9 +11,9 @@ export default function SimulacionSensibilidadPerformanceChart({
   scoresByAlt,
   onWeightChange,
   metodoLabel,
+  plotBgColor = '#f7f7ef',
 }) {
   const { isDark } = useTheme();
-  const chartBg = getSimulacionChartBgColors(isDark);
 
   const wmap = useMemo(() => coerceWeightsMap(weights, criteria), [weights, criteria]);
 
@@ -69,8 +68,8 @@ export default function SimulacionSensibilidadPerformanceChart({
           datarevision: plotRevision,
           uirevision: 'perf',
           margin: { l: 52, r: 52, t: 28, b: 72 },
-          paper_bgcolor: chartBg.paper_bgcolor,
-          plot_bgcolor: chartBg.plot_bgcolor,
+          paper_bgcolor: 'transparent',
+          plot_bgcolor: plotBgColor,
           font: { color: isDark ? '#e5e7eb' : '#374151', size: 10 },
           xaxis: { tickangle: -30, gridcolor: isDark ? '#374151' : '#e5e7eb' },
           yaxis: {

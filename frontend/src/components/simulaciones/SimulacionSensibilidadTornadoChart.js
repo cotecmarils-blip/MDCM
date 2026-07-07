@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import { useTheme } from '../../ThemeContext';
-import { getSimulacionChartBgColors } from './simulacionChartTheme';
 
 function abbreviateLabel(text, max = 28) {
   const s = String(text ?? '').trim();
@@ -14,9 +13,9 @@ export default function SimulacionSensibilidadTornadoChart({
   metodoLabel,
   loading,
   syncing = false,
+  plotBgColor = '#f7f7ef',
 }) {
   const { isDark } = useTheme();
-  const chartBg = getSimulacionChartBgColors(isDark);
 
   const plot = useMemo(() => {
     const bars = payload?.bars || [];
@@ -127,8 +126,8 @@ export default function SimulacionSensibilidadTornadoChart({
           uirevision: 'tornado',
           barmode: 'overlay',
           margin: { l: 140, r: 32, t: 28, b: 48 },
-          paper_bgcolor: chartBg.paper_bgcolor,
-          plot_bgcolor: chartBg.plot_bgcolor,
+          paper_bgcolor: 'transparent',
+          plot_bgcolor: plotBgColor,
           font: { color: fontColor, size: 11 },
           xaxis: {
             title: `Score ${metodoLabel}`,
