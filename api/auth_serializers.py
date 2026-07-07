@@ -182,13 +182,47 @@ class ProyectoMembershipSerializer(serializers.ModelSerializer):
         alternativa_ids = attrs.get('alternativa_ids', [])
         proyecto = attrs.get('proyecto') or getattr(self.instance, 'proyecto', None)
         username = attrs.pop('username', None)
-        email = (attrs.pop('email', None) or '').strip()
+        email_raw = attrs.pop('email', None)
         password = attrs.pop('password', None)
-        first_name = (attrs.pop('first_name', None) or '').strip()
-        last_name = (attrs.pop('last_name', None) or '').strip()
+        first_name_raw = attrs.pop('first_name', None)
+        last_name_raw = attrs.pop('last_name', None)
+        email = (email_raw or '').strip() if email_raw is not None else None
+        first_name = (first_name_raw or '').strip() if first_name_raw is not None else None
+        last_name = (last_name_raw or '').strip() if last_name_raw is not None else None
         self._pending_user = None
+        self._pending_user_update = None
 
-        if username and not attrs.get('usuario'):
+        if self.instance:
+            user = self.instance.usuario
+            update_fields = {}
+            if username is not None:
+                username = username.strip()
+                if not username:
+                    raise serializers.ValidationError(
+                        {'username': 'El nombre de usuario no puede estar vacío.'}
+                    )
+                if username != user.username:
+                    if User.objects.filter(username=username).exclude(pk=user.pk).exists():
+                        raise serializers.ValidationError(
+                            {'username': 'Ya existe un usuario con ese nombre de usuario.'}
+                        )
+                    update_fields['username'] = username
+            if email is not None and email != (user.email or ''):
+                if email and User.objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
+                    raise serializers.ValidationError(
+                        {'email': 'Ya existe un usuario con ese correo electrónico.'}
+                    )
+                update_fields['email'] = email
+            if first_name is not None:
+                update_fields['first_name'] = first_name
+            if last_name is not None:
+                update_fields['last_name'] = last_name
+            if password:
+                assert_password_valid(password, user)
+                update_fields['password'] = password
+            if update_fields:
+                self._pending_user_update = update_fields
+        elif username and not attrs.get('usuario'):
             if User.objects.filter(username=username).exists():
                 raise serializers.ValidationError(
                     {'username': 'Ya existe un usuario con ese nombre de usuario.'}
@@ -326,6 +360,15 @@ class ProyectoMembershipSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         mision_ids = validated_data.pop('mision_ids', None)
         alternativa_ids = validated_data.pop('alternativa_ids', None)
+        pending_update = getattr(self, '_pending_user_update', None)
+        if pending_update:
+            user = instance.usuario
+            password = pending_update.pop('password', None)
+            for field, value in pending_update.items():
+                setattr(user, field, value)
+            if password:
+                user.set_password(password)
+            user.save()
         membership = super().update(instance, validated_data)
         if mision_ids is not None or alternativa_ids is not None:
             self._sync_assignments(

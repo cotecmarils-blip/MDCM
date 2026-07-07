@@ -164,6 +164,15 @@ function UsuariosPanel({ proyectoId, canManage }) {
         setError('Las contraseñas no coinciden.');
         return;
       }
+    } else if (form.password || form.passwordConfirm) {
+      if (!form.password || !form.passwordConfirm) {
+        setError('Complete ambos campos de contraseña para cambiarla.');
+        return;
+      }
+      if (form.password !== form.passwordConfirm) {
+        setError('Las contraseñas no coinciden.');
+        return;
+      }
     }
     if (form.activo && form.tipoAcceso === 'limitado' && !hasDuracionAcceso()) {
       setError('Indique al menos un día, hora o minuto de acceso.');
@@ -180,7 +189,14 @@ function UsuariosPanel({ proyectoId, canManage }) {
         ...buildAccessPayload(),
       };
       if (editing) {
-        await authApi.updateMembership(editing.id, payload);
+        await authApi.updateMembership(editing.id, {
+          ...payload,
+          username: form.username.trim(),
+          email: form.email.trim(),
+          first_name: form.first_name.trim(),
+          last_name: form.last_name.trim(),
+          ...(form.password ? { password: form.password } : {}),
+        });
       } else {
         await authApi.createMembership({
           ...payload,
@@ -269,81 +285,83 @@ function UsuariosPanel({ proyectoId, canManage }) {
           className="rounded-xl border border-gray-200 dark:border-navy-700 bg-white dark:bg-navy-900 p-5 space-y-4"
         >
           <h3 className="font-semibold text-gray-900 dark:text-white">
-            {editing ? 'Editar membresía' : 'Nuevo usuario'}
+            {editing ? 'Editar usuario' : 'Nuevo usuario'}
           </h3>
 
-          {!editing && (
-            <div className="space-y-4">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Nombre de usuario</label>
+              <input
+                type="text"
+                value={form.username}
+                onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+                placeholder="ej. jperez"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-950"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Nombre de usuario</label>
+                <label className="block text-sm font-medium mb-1">Nombre</label>
                 <input
                   type="text"
-                  value={form.username}
-                  onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-                  placeholder="ej. jperez"
+                  value={form.first_name}
+                  onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-950"
-                  required
                 />
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Nombre</label>
-                  <input
-                    type="text"
-                    value={form.first_name}
-                    onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-950"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Apellido</label>
-                  <input
-                    type="text"
-                    value={form.last_name}
-                    onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-950"
-                  />
-                </div>
-              </div>
-
               <div>
-                <label className="block text-sm font-medium mb-1">Correo electrónico</label>
+                <label className="block text-sm font-medium mb-1">Apellido</label>
                 <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  placeholder="usuario@empresa.com"
+                  type="text"
+                  value={form.last_name}
+                  onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-950"
                 />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Contraseña</label>
-                  <input
-                    type="password"
-                    value={form.password}
-                    onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                    autoComplete="new-password"
-                    required
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-950"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Confirmar contraseña</label>
-                  <input
-                    type="password"
-                    value={form.passwordConfirm}
-                    onChange={(e) => setForm((f) => ({ ...f, passwordConfirm: e.target.value }))}
-                    autoComplete="new-password"
-                    required
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-950"
-                  />
-                </div>
               </div>
             </div>
-          )}
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Correo electrónico</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="usuario@empresa.com"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-950"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  {editing ? 'Nueva contraseña (opcional)' : 'Contraseña'}
+                </label>
+                <input
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                  autoComplete="new-password"
+                  required={!editing}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-950"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  {editing ? 'Confirmar nueva contraseña' : 'Confirmar contraseña'}
+                </label>
+                <input
+                  type="password"
+                  value={form.passwordConfirm}
+                  onChange={(e) => setForm((f) => ({ ...f, passwordConfirm: e.target.value }))}
+                  autoComplete="new-password"
+                  required={!editing}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-950"
+                />
+              </div>
+            </div>
+          </div>
 
           <div>
             <label className="block text-sm font-medium mb-1">Rol</label>
