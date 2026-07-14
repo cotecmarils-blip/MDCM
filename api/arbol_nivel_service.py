@@ -61,7 +61,25 @@ def ensure_niveles_arbol(
     if ProyectoNivelArbol.objects.filter(proyecto=proyecto, rama_evaluacion=rama).exists():
         return list_niveles_arbol(proyecto, rama)
 
+    # Reutilizar nombres/órdenes de OMOE si ya fueron personalizados en el proyecto.
+    plantilla = []
+    if rama != RAMA_OMOE:
+        plantilla = list_niveles_arbol(proyecto, RAMA_OMOE)
+
     niveles: list[ProyectoNivelArbol] = []
+    if plantilla:
+        for src in plantilla:
+            nivel = ProyectoNivelArbol.objects.create(
+                proyecto=proyecto,
+                rama_evaluacion=rama,
+                orden=src.orden,
+                codigo=src.codigo,
+                nombre=src.nombre,
+                activo=src.activo,
+            )
+            niveles.append(nivel)
+        return niveles
+
     for orden in range(1, DEFAULT_NIVEL_COUNT + 1):
         codigo, nombre = DEFAULT_NIVELES[orden - 1]
         nivel = ProyectoNivelArbol.objects.create(
@@ -87,6 +105,39 @@ def ensure_all_ramas_niveles(proyecto: Proyecto) -> None:
     )
     for rama in usadas:
         ensure_niveles_arbol(proyecto, rama)
+    _sync_nombres_default_desde_omoe(proyecto)
+
+
+def _default_nombre_por_orden(orden: int) -> str:
+    if 1 <= orden <= len(DEFAULT_NIVELES):
+        return DEFAULT_NIVELES[orden - 1][1]
+    return f'Nivel {orden}'
+
+
+def _sync_nombres_default_desde_omoe(proyecto: Proyecto) -> None:
+    """Si OMOE tiene nombres personalizados, cópialos a ramas que aún usan la plantilla."""
+    omoe_by_orden = {
+        n.orden: n
+        for n in ProyectoNivelArbol.objects.filter(
+            proyecto=proyecto,
+            rama_evaluacion=RAMA_OMOE,
+        )
+    }
+    if not omoe_by_orden:
+        return
+    otras = ProyectoNivelArbol.objects.filter(proyecto=proyecto).exclude(
+        rama_evaluacion=RAMA_OMOE,
+    )
+    for nivel in otras:
+        src = omoe_by_orden.get(nivel.orden)
+        if not src:
+            continue
+        if nivel.nombre != _default_nombre_por_orden(nivel.orden):
+            continue
+        if src.nombre == nivel.nombre:
+            continue
+        nivel.nombre = src.nombre
+        nivel.save(update_fields=['nombre', 'fecha_actualizacion'])
 
 
 def list_niveles_arbol(proyecto: Proyecto, rama: str | None = None) -> list[ProyectoNivelArbol]:

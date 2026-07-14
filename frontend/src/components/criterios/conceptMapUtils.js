@@ -294,13 +294,16 @@ export function getDepthRowPositions(layoutRoot, nivelesArbol = []) {
     });
   });
 
+  // Preferir el nombre real del tipo en los nodos (tipo_nivel_nombre) sobre la
+  // plantilla genérica "Nivel N" cuando el árbol ya tiene elementos.
   function walkLabels(n) {
     const row = n.rowIndex ?? n.depth ?? 0;
-    if (row > 0 && !rows.has(row)) {
+    if (row > 0 && n.levelLabel) {
+      const existing = rows.get(row);
       rows.set(row, {
         depth: row,
         label: n.levelLabel,
-        y: nodeRowCenterY(n),
+        y: existing?.y ?? nodeRowCenterY(n),
       });
     }
     (n.children || []).forEach(walkLabels);

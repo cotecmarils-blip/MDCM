@@ -154,14 +154,24 @@ class NodoArbolSerializer(serializers.ModelSerializer):
         if tipo_nivel and omoe:
             omoe_rama = effective_rama_for_omoe(omoe)
             if tipo_nivel.rama_evaluacion != omoe_rama:
-                raise serializers.ValidationError({
-                    'tipo_nivel': (
-                        'El tipo de nivel pertenece a '
-                        f'{(tipo_nivel.rama_evaluacion or "").upper() or "Otra"}, '
-                        f'pero la dimensión es {omoe_rama.upper()}. '
-                        'Elija un nivel configurado para esa dimensión.'
-                    ),
-                })
+                # Las ramas suelen compartir nombres/órdenes, pero cada una tiene IDs
+                # propios. Si el cliente conserva un ID de otra pestaña/rama, traducirlo
+                # al nivel equivalente de la dimensión en vez de rechazar la creación.
+                equivalente = ProyectoNivelArbol.objects.filter(
+                    proyecto_id=omoe.proyecto_id,
+                    rama_evaluacion=omoe_rama,
+                    orden=tipo_nivel.orden,
+                    activo=True,
+                ).first()
+                if equivalente is None:
+                    raise serializers.ValidationError({
+                        'tipo_nivel': (
+                            'No existe un nivel equivalente activo para '
+                            f'{omoe_rama.upper()} en el orden {tipo_nivel.orden}.'
+                        ),
+                    })
+                tipo_nivel = equivalente
+                attrs['tipo_nivel'] = equivalente
 
         if tipo_nivel:
             parent = attrs.get('parent')

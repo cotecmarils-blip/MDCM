@@ -8,6 +8,7 @@ function TipoNivelPickerModal({
   parentLevel,
   parentNode,
   allowedNiveles,
+  dimensionRama = null,
   onSelect,
   onCancel,
 }) {
@@ -15,6 +16,7 @@ function TipoNivelPickerModal({
 
   const activos = allowedNiveles ?? (niveles || []).filter((n) => n.activo !== false);
   const hint = childLevelHint(parentLevel, parentNode, niveles);
+  const ramaLabel = dimensionRama ? String(dimensionRama).toUpperCase() : null;
 
   return (
     <div className={MODAL_BACKDROP_CLASS}>
@@ -22,9 +24,12 @@ function TipoNivelPickerModal({
         <div>
           <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">
             Tipo de nodo hijo
+            {ramaLabel ? ` · ${ramaLabel}` : ''}
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Elige un nivel inferior al padre. No puedes repetir el mismo nivel ni crear uno superior.
+            Elige un nivel inferior al padre
+            {ramaLabel ? ` de la dimensión ${ramaLabel}` : ''}
+            . No puedes repetir el mismo nivel ni crear uno superior.
           </p>
           {hint && (
             <p className="text-xs text-navy-600 dark:text-navy-400 mt-2 font-medium">{hint}</p>
@@ -45,7 +50,10 @@ function TipoNivelPickerModal({
                 onClick={() => onSelect(nivel)}
                 className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700/60 hover:border-navy-500 hover:bg-navy-500/5 transition-colors"
               >
-                <span className="text-xs text-gray-400 uppercase block">Nivel {nivel.orden}</span>
+                <span className="text-xs text-gray-400 uppercase block">
+                  Orden {nivel.orden}
+                  {ramaLabel ? ` · ${ramaLabel}` : ''}
+                </span>
                 <span className="font-medium text-gray-800 dark:text-gray-100">{nivel.nombre}</span>
               </button>
             ))

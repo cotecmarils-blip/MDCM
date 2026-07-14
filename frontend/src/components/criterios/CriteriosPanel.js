@@ -447,6 +447,10 @@ function CriteriosPanel({ proyectoId }) {
         open={typePicker.open}
         parentLevel={typePicker.parentLevel}
         parentNode={typePicker.parentNode}
+        dimensionRama={
+          typePicker.dimensionRama
+          || resolveChildRama(typePicker.parentLevel, typePicker.parentNode)
+        }
         allowedNiveles={filterNivelesForChild(
           nivelesForRama(
             typePicker.dimensionRama
