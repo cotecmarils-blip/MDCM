@@ -1,6 +1,10 @@
 """Crea subcarpetas de MEDIA_ROOT (p. ej. volumen Railway en /data/media)."""
 import os
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 import django
 
