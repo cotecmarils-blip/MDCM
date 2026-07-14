@@ -156,8 +156,10 @@ class NodoArbolSerializer(serializers.ModelSerializer):
             if tipo_nivel.rama_evaluacion != omoe_rama:
                 raise serializers.ValidationError({
                     'tipo_nivel': (
-                        'El tipo de nivel no corresponde a la rama de la dimensión '
-                        f'({omoe_rama.upper()}).'
+                        'El tipo de nivel pertenece a '
+                        f'{(tipo_nivel.rama_evaluacion or "").upper() or "Otra"}, '
+                        f'pero la dimensión es {omoe_rama.upper()}. '
+                        'Elija un nivel configurado para esa dimensión.'
                     ),
                 })
 

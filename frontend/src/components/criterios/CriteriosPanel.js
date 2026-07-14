@@ -11,7 +11,7 @@ import TipoNivelPickerModal from './TipoNivelPickerModal';
 import { resolveEditSelection } from './treeUtils';
 import { CRITERIO_LEVELS } from './constants';
 import { normalizeOmoeForest } from './buildCriteriosTree';
-import { effectiveOmoeRama } from './ramaContext';
+import { effectiveOmoeRama, resolveAddChildRama } from './ramaContext';
 import { canAddChildNode, filterNivelesForChild } from './nivelArbolRules';
 import {
   buildConfigMapFromArbolPayload,
@@ -36,7 +36,12 @@ function CriteriosPanel({ proyectoId }) {
   const [loading, setLoading] = useState(true);
   const [selection, setSelection] = useState({ mode: 'empty' });
   const [configOpen, setConfigOpen] = useState(false);
-  const [typePicker, setTypePicker] = useState({ open: false, parentLevel: null, parentNode: null });
+  const [typePicker, setTypePicker] = useState({
+    open: false,
+    parentLevel: null,
+    parentNode: null,
+    dimensionRama: null,
+  });
   const [importOpen, setImportOpen] = useState(false);
   const [importCatalog, setImportCatalog] = useState([]);
   const [importLoading, setImportLoading] = useState(false);
@@ -63,8 +68,13 @@ function CriteriosPanel({ proyectoId }) {
   }, [proyectoId]);
 
   const nivelesForRama = useCallback(
-    (rama) => nivelesByRama[rama] || nivelesByRama.omoe || [],
+    (rama) => (rama ? (nivelesByRama[rama] || []) : []),
     [nivelesByRama],
+  );
+
+  const resolveChildRama = useCallback(
+    (parentLevel, parentNode) => resolveAddChildRama(parentLevel, parentNode, forest),
+    [forest],
   );
 
   const loadTree = useCallback(
@@ -257,24 +267,20 @@ function CriteriosPanel({ proyectoId }) {
   };
 
   const handleAddChild = (parentLevel, parentNode) => {
-    const rama =
-      parentLevel === CRITERIO_LEVELS.OMOE
-        ? effectiveOmoeRama(parentNode)
-        : parentNode?.dimensionRama || effectiveOmoeRama(parentNode);
+    const rama = resolveChildRama(parentLevel, parentNode);
     const nivelesRama = nivelesForRama(rama);
     if (!canAddChildNode(parentLevel, parentNode, nivelesRama)) {
       return;
     }
-    setTypePicker({ open: true, parentLevel, parentNode });
+    setTypePicker({ open: true, parentLevel, parentNode, dimensionRama: rama });
   };
 
   const handleTypeSelected = (tipoNivel) => {
-    const { parentLevel, parentNode } = typePicker;
-    const dimensionRama =
-      parentLevel === CRITERIO_LEVELS.OMOE
-        ? effectiveOmoeRama(parentNode)
-        : selection.dimensionRama;
-    setTypePicker({ open: false, parentLevel: null, parentNode: null });
+    const { parentLevel, parentNode, dimensionRama: pickerRama } = typePicker;
+    const dimensionRama = pickerRama || resolveChildRama(parentLevel, parentNode);
+    setTypePicker({
+      open: false, parentLevel: null, parentNode: null, dimensionRama: null,
+    });
     setSelection({
       mode: 'create',
       level: CRITERIO_LEVELS.NODO_ARBOL,
@@ -443,15 +449,16 @@ function CriteriosPanel({ proyectoId }) {
         parentNode={typePicker.parentNode}
         allowedNiveles={filterNivelesForChild(
           nivelesForRama(
-            typePicker.parentLevel === CRITERIO_LEVELS.OMOE
-              ? effectiveOmoeRama(typePicker.parentNode)
-              : typePicker.parentNode?.dimensionRama || 'omoe',
+            typePicker.dimensionRama
+              || resolveChildRama(typePicker.parentLevel, typePicker.parentNode),
           ),
           typePicker.parentLevel,
           typePicker.parentNode,
         )}
         onSelect={handleTypeSelected}
-        onCancel={() => setTypePicker({ open: false, parentLevel: null, parentNode: null })}
+        onCancel={() => setTypePicker({
+          open: false, parentLevel: null, parentNode: null, dimensionRama: null,
+        })}
       />
 
       <ImportarDimensionModal

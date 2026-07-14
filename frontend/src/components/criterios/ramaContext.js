@@ -86,6 +86,33 @@ export function resolveDimensionRama(selection) {
   return null;
 }
 
+/**
+ * Rama correcta al crear un hijo bajo una dimensión o un nodo del árbol.
+ * No debe caer a OMOE cuando el padre está en OMOC/OMOR.
+ */
+export function resolveAddChildRama(parentLevel, parentNode, forest = []) {
+  if (!parentNode) return 'omoe';
+
+  if (parentLevel === CRITERIO_LEVELS.OMOE) {
+    return effectiveOmoeRama(parentNode);
+  }
+
+  if (parentNode.dimensionRama) {
+    return parentNode.dimensionRama;
+  }
+  if (parentNode.rama) {
+    return parentNode.rama;
+  }
+
+  const omoeId = parentNode.omoe_id ?? parentNode.omoe;
+  if (omoeId != null && Array.isArray(forest) && forest.length) {
+    const omoe = forest.find((o) => String(o.id) === String(omoeId));
+    if (omoe) return effectiveOmoeRama(omoe);
+  }
+
+  return effectiveOmoeRama(parentNode);
+}
+
 export function filterForestByRama(forest, ramaFilter) {
   if (!forest?.length || ramaFilter === RAMA_FILTER_ALL) return forest;
   return forest.filter((omoe) => effectiveOmoeRama(omoe) === ramaFilter);
