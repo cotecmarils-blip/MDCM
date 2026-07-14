@@ -280,7 +280,12 @@ def get_arbol_config_payload(escenario: Escenario) -> dict[str, Any]:
 
 
 @transaction.atomic
-def save_arbol_config(escenario: Escenario, items: list[dict[str, Any]]) -> dict[str, Any]:
+def save_arbol_config(
+    escenario: Escenario,
+    items: list[dict[str, Any]],
+    *,
+    usuario=None,
+) -> dict[str, Any]:
     if not escenario.omoe_id:
         raise ValidationError('El escenario debe estar vinculado a una dimensión (OMOE).')
 
@@ -304,12 +309,54 @@ def save_arbol_config(escenario: Escenario, items: list[dict[str, Any]]) -> dict
         row = existing.get(nodo_id)
         if row is None:
             row = NodoArbolEscenario(escenario=escenario, nodo_arbol_id=nodo_id)
+        nodo = NodoArbol.objects.filter(pk=nodo_id).first()
+        nodo_nombre = nodo.nombre if nodo else f'Nodo #{nodo_id}'
+        antes = {
+            'peso': float(row.peso or 0) if row.pk else None,
+            'aplica': row.aplica if row.pk else None,
+            'tipo_criterio': row.tipo_criterio if row.pk else None,
+            'familia_funciones': row.familia_funciones if row.pk else None,
+            'parametros_funcion': row.parametros_funcion if row.pk else None,
+        }
         row.peso = _q2(Decimal(str(item.get('peso') or 0)))
         row.aplica = bool(item.get('aplica', True))
         row.tipo_criterio = (item.get('tipo_criterio') or '').strip()
         row.familia_funciones = (item.get('familia_funciones') or '').strip()
         row.parametros_funcion = item.get('parametros_funcion') or {}
         row.save()
+        if usuario:
+            from .evento_decision_service import registrar_cambio
+            from .models import EventoDecisionRegistro
+
+            proyecto_id = escenario.proyecto_id
+            omoe_id = escenario.omoe_id
+            escenario_id = escenario.id
+            for campo, tipo in (
+                ('peso', EventoDecisionRegistro.TIPO_PESO),
+                ('aplica', EventoDecisionRegistro.TIPO_CONFIG_ESCENARIO),
+                ('tipo_criterio', EventoDecisionRegistro.TIPO_UTILIDAD),
+                ('familia_funciones', EventoDecisionRegistro.TIPO_UTILIDAD),
+                ('parametros_funcion', EventoDecisionRegistro.TIPO_UTILIDAD),
+            ):
+                nuevo = item.get(campo) if campo != 'peso' else float(row.peso or 0)
+                if campo == 'aplica':
+                    nuevo = bool(item.get('aplica', True))
+                anterior = antes.get(campo)
+                if anterior == nuevo:
+                    continue
+                registrar_cambio(
+                    proyecto_id,
+                    usuario,
+                    tipo_cambio=tipo,
+                    entidad_tipo='nodo_arbol_escenario',
+                    entidad_id=nodo_id,
+                    entidad_nombre=nodo_nombre,
+                    campo=campo,
+                    valor_anterior=anterior,
+                    valor_nuevo=nuevo,
+                    omoe_id=omoe_id,
+                    escenario_id=escenario_id,
+                )
 
     return get_arbol_config_payload(escenario)
 
@@ -535,7 +582,13 @@ def propagate_nodo_config(
 
 
 @transaction.atomic
-def save_nodo_config(escenario: Escenario, nodo_id: int, data: dict[str, Any]) -> dict[str, Any]:
+def save_nodo_config(
+    escenario: Escenario,
+    nodo_id: int,
+    data: dict[str, Any],
+    *,
+    usuario=None,
+) -> dict[str, Any]:
     if not escenario.omoe_id:
         raise ValidationError('El escenario debe estar vinculado a una dimensión (OMOE).')
 
@@ -554,6 +607,13 @@ def save_nodo_config(escenario: Escenario, nodo_id: int, data: dict[str, Any]) -
 
     propagar = bool(data.get('propagar_a_todos', False))
     aplica_antes = bool(row.aplica)
+    snapshot_antes = {
+        'peso': float(row.peso or 0),
+        'aplica': row.aplica,
+        'tipo_criterio': row.tipo_criterio or '',
+        'familia_funciones': row.familia_funciones or '',
+        'parametros_funcion': row.parametros_funcion or {},
+    }
 
     modo_grupo = get_grupo_modo(escenario, nodo.parent_id)
     if modo_grupo == PesoGrupoAhp.MODO_AHP and 'peso' in data:
@@ -586,6 +646,74 @@ def save_nodo_config(escenario: Escenario, nodo_id: int, data: dict[str, Any]) -
     if tipo in dict(NivelImpacto.TIPO_CONSECUENCIA_CHOICES):
         row.tipo_consecuencia = tipo
     row.save()
+
+    if usuario:
+        from .evento_decision_service import (
+            _meta_accion,
+            _meta_efecto,
+            nuevo_lote_auditoria,
+            registrar_cambio,
+        )
+        from .models import EventoDecisionRegistro
+
+        proyecto_id = escenario.proyecto_id
+        omoe_id = escenario.omoe_id
+        escenario_id = escenario.id
+        snapshot_despues = {
+            'peso': float(row.peso or 0),
+            'aplica': row.aplica,
+            'tipo_criterio': row.tipo_criterio or '',
+            'familia_funciones': row.familia_funciones or '',
+            'parametros_funcion': dict(row.parametros_funcion or {}),
+        }
+        pendientes = []
+        for campo, tipo in (
+            ('peso', EventoDecisionRegistro.TIPO_PESO),
+            ('aplica', EventoDecisionRegistro.TIPO_CONFIG_ESCENARIO),
+            ('tipo_criterio', EventoDecisionRegistro.TIPO_UTILIDAD),
+            ('familia_funciones', EventoDecisionRegistro.TIPO_UTILIDAD),
+            ('parametros_funcion', EventoDecisionRegistro.TIPO_UTILIDAD),
+        ):
+            if campo not in data and campo != 'peso':
+                continue
+            if campo == 'peso' and modo_grupo == PesoGrupoAhp.MODO_AHP and 'peso' in data:
+                continue
+            anterior = snapshot_antes.get(campo)
+            nuevo = snapshot_despues.get(campo)
+            if anterior == nuevo:
+                continue
+            pendientes.append((tipo, campo, anterior, nuevo))
+
+        if pendientes:
+            lote_id = nuevo_lote_auditoria()
+            prefer = (
+                'parametros_funcion', 'familia_funciones', 'peso',
+                'tipo_criterio', 'aplica',
+            )
+            prefer_idx = {c: i for i, c in enumerate(prefer)}
+            pendientes.sort(key=lambda row: prefer_idx.get(row[1], 99))
+            resumen = f'Actualización de «{nodo.nombre}»'
+            if any(c == 'parametros_funcion' for _, c, _, _ in pendientes):
+                resumen = f'Constantes / función de utilidad · {nodo.nombre}'
+            for i, (tipo, campo, anterior, nuevo) in enumerate(pendientes):
+                registrar_cambio(
+                    proyecto_id,
+                    usuario,
+                    tipo_cambio=tipo,
+                    entidad_tipo='nodo_arbol',
+                    entidad_id=nodo.id,
+                    entidad_nombre=nodo.nombre,
+                    campo=campo,
+                    valor_anterior=anterior,
+                    valor_nuevo=nuevo,
+                    omoe_id=omoe_id,
+                    escenario_id=escenario_id,
+                    metadata=(
+                        _meta_accion(lote_id, resumen)
+                        if i == 0
+                        else _meta_efecto(lote_id)
+                    ),
+                )
 
     aplica_cambio = row.aplica != aplica_antes
     descendientes_desactivados = 0

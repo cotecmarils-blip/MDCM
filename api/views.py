@@ -6,12 +6,18 @@ from django.db import transaction
 from django.http import HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 import unicodedata
 
-from .access import can_manage_members, can_write_resource, is_global_admin
+from .access import (
+    can_manage_members,
+    can_read_proyecto,
+    can_write_resource,
+    is_global_admin,
+    user_proyecto_ids,
+)
 from .mcdm_utils import (
     build_alternatives_export,
     build_hierarchy_export,
@@ -33,6 +39,16 @@ def _openpyxl():
             'Falta openpyxl. En el venv: pip install openpyxl==3.1.5'
         ) from exc
     return Workbook, load_workbook, Alignment, Font, PatternFill
+
+
+def _qp_int(request, name):
+    raw = request.query_params.get(name)
+    if raw in (None, ''):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
 
 from .models import (
     Proyecto,
@@ -345,6 +361,79 @@ class ProyectoViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
                 defaults={'rol': ProyectoMembership.ROL_JEFE},
             )
 
+    @action(detail=True, methods=['get'], url_path='catalogo-dimensiones')
+    def catalogo_dimensiones(self, request, pk=None):
+        """Lista dimensiones de proyectos accesibles para importar como plantilla."""
+        proyecto = self.get_object()
+        if is_global_admin(request.user):
+            from .models import Proyecto as ProyectoModel
+            ids = list(ProyectoModel.objects.values_list('id', flat=True))
+        else:
+            ids = list(user_proyecto_ids(request.user))
+        from .dimension_clone_service import listar_catalogo_dimensiones
+
+        items = listar_catalogo_dimensiones(
+            proyecto_ids=ids,
+            excluir_proyecto_id=proyecto.id,
+            incluir_proyecto_actual=True,
+        )
+        return Response({'items': items, 'count': len(items)})
+
+    @action(detail=True, methods=['post'], url_path='importar-dimension')
+    def importar_dimension(self, request, pk=None):
+        """Importa (clona) una dimensión y su árbol micro desde otra (o la misma) proyectada."""
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from .dimension_clone_service import clonar_dimension_en_proyecto
+        from .models import Omoe
+        from .omoe_serializers import OmoeSerializer
+
+        proyecto = self.get_object()
+        if not can_write_resource(request.user, proyecto, 'omoe'):
+            return Response(
+                {'detail': 'Sin permiso para importar dimensiones en este proyecto.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        fuente_id = request.data.get('fuente_omoe_id') or request.data.get('omoe_id')
+        try:
+            fuente_id = int(fuente_id)
+        except (TypeError, ValueError):
+            return Response(
+                {'fuente_omoe_id': ['Indique el id de la dimensión origen.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        fuente = Omoe.objects.select_related('proyecto').filter(pk=fuente_id).first()
+        if fuente is None:
+            return Response(
+                {'detail': 'Dimensión origen no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not can_read_proyecto(request.user, fuente.proyecto_id):
+            return Response(
+                {'detail': 'Sin permiso para leer la dimensión origen.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        nombre = request.data.get('nombre_modelo')
+        try:
+            result = clonar_dimension_en_proyecto(
+                fuente, proyecto, nombre_modelo=nombre,
+            )
+        except DjangoValidationError as exc:
+            msg = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        dest = Omoe.objects.prefetch_related(*OMOE_TREE_PREFETCH).get(pk=result['omoe_id'])
+        return Response(
+            {
+                **result,
+                'omoe': OmoeSerializer(dest).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=['get', 'put'], url_path='niveles-arbol')
     def niveles_arbol(self, request, pk=None):
         from django.core.exceptions import ValidationError as DjangoValidationError
@@ -355,12 +444,21 @@ class ProyectoViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
             save_niveles_arbol,
         )
         from .evaluacion_rama_choices import RAMAS_DIMENSION
+        from .tipo_dimension_service import assert_codigo_activo, codigos_tipos_activos
 
         proyecto = self.get_object()
         rama_query = (request.query_params.get('rama') or '').strip().lower()
+        codigos_ok = set(codigos_tipos_activos()) | set(RAMAS_DIMENSION)
 
         if request.method == 'GET':
-            if rama_query in RAMAS_DIMENSION:
+            if rama_query:
+                if rama_query not in codigos_ok and not proyecto.niveles_arbol.filter(
+                    rama_evaluacion=rama_query,
+                ).exists():
+                    return Response(
+                        {'rama': ['Tipo de dimensión no reconocido.']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 ensure_niveles_arbol(proyecto, rama_query)
                 niveles_qs = list_niveles_arbol(proyecto, rama_query)
                 return Response(ProyectoNivelArbolSerializer(niveles_qs, many=True).data)
@@ -378,11 +476,16 @@ class ProyectoViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
             )
 
         rama_body = (request.data.get('rama') or rama_query or '').strip().lower()
-        if rama_body not in RAMAS_DIMENSION:
-            return Response(
-                {'rama': ['Indique la rama: omoe, omoc u omor.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        try:
+            assert_codigo_activo(rama_body)
+        except Exception:
+            if rama_body not in codigos_ok and not proyecto.niveles_arbol.filter(
+                rama_evaluacion=rama_body,
+            ).exists():
+                return Response(
+                    {'rama': ['Indique un tipo de dimensión válido del catálogo.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         items = request.data.get('niveles')
         if not isinstance(items, list):
             return Response(
@@ -645,6 +748,53 @@ class ProyectoViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
         proyecto = self.get_object()
         return Response(build_evaluacion_schema(proyecto))
 
+    @action(detail=True, methods=['get'], url_path='curvas-utilidad')
+    def curvas_utilidad(self, request, pk=None):
+        from .curvas_utilidad_service import build_curvas_utilidad_export
+
+        proyecto = self.get_object()
+        return Response(build_curvas_utilidad_export(proyecto))
+
+    @action(detail=True, methods=['get'], url_path='informe-costos-word')
+    def informe_costos_word(self, request, pk=None):
+        """Word de costos (OMOC) con escenario Estandar — prioridad Felipe."""
+        from django.http import HttpResponse
+
+        from .informe_word_service import build_informe_costos_docx
+
+        proyecto = self.get_object()
+        content = build_informe_costos_docx(proyecto)
+        filename = f'informe-costos-{proyecto.id}.docx'
+        response = HttpResponse(
+            content,
+            content_type=(
+                'application/vnd.openxmlformats-officedocument.'
+                'wordprocessingml.document'
+            ),
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+    @action(detail=True, methods=['get'], url_path='informe-curvas-word')
+    def informe_curvas_word(self, request, pk=None):
+        """Word con curvas de utilidad finales (nodo terminal × escenario)."""
+        from django.http import HttpResponse
+
+        from .informe_word_service import build_informe_curvas_docx
+
+        proyecto = self.get_object()
+        content = build_informe_curvas_docx(proyecto)
+        filename = f'informe-curvas-utilidad-{proyecto.id}.docx'
+        response = HttpResponse(
+            content,
+            content_type=(
+                'application/vnd.openxmlformats-officedocument.'
+                'wordprocessingml.document'
+            ),
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
     @action(detail=True, methods=['get', 'put'], url_path='evaluacion/valores')
     def evaluacion_valores(self, request, pk=None):
         from .evaluacion_service import load_valores_map, save_valores_bulk
@@ -683,6 +833,236 @@ class ProyectoViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
 
         proyecto = self.get_object()
         return Response(validar_simulacion(proyecto))
+
+    @action(detail=True, methods=['get', 'post'], url_path='config-trazabilidad')
+    def config_trazabilidad(self, request, pk=None):
+        from .config_trazabilidad_service import (
+            MOMENTO_ORDER,
+            build_config_trazabilidad,
+            registrar_sesion_config,
+        )
+
+        proyecto = self.get_object()
+        omoe_id = request.query_params.get('omoe')
+        omoe_pk = None
+        if omoe_id:
+            try:
+                omoe_pk = int(omoe_id)
+            except (TypeError, ValueError):
+                return Response(
+                    {'detail': 'Parámetro omoe inválido.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        if request.method == 'GET':
+            return Response(build_config_trazabilidad(proyecto, omoe_id=omoe_pk))
+
+        if not can_write_resource(request.user, proyecto, 'proyecto'):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        body = request.data if isinstance(request.data, dict) else {}
+        momento = (body.get('momento') or '').strip()
+        if momento not in MOMENTO_ORDER:
+            return Response(
+                {'detail': 'Indique un momento válido: estructura, utilidad, pesos o evaluacion.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        notas = body.get('notas') or ''
+        omoe_body = body.get('omoe_id') or body.get('omoe')
+        omoe_body_pk = None
+        if omoe_body not in (None, ''):
+            try:
+                omoe_body_pk = int(omoe_body)
+            except (TypeError, ValueError):
+                return Response(
+                    {'detail': 'omoe_id inválido.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        try:
+            registro = registrar_sesion_config(
+                proyecto,
+                request.user,
+                momento,
+                notas=notas,
+                omoe_id=omoe_body_pk,
+            )
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            from .models import Omoe
+            if isinstance(exc, Omoe.DoesNotExist):
+                return Response({'detail': 'Dimensión no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+            raise
+
+        payload = build_config_trazabilidad(proyecto, omoe_id=omoe_pk)
+        payload['registro'] = {
+            'id': registro.id,
+            'momento': registro.momento,
+            'notas': registro.notas,
+            'fecha': registro.fecha_creacion.isoformat(),
+        }
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get', 'post'], url_path='eventos-decision')
+    def eventos_decision(self, request, pk=None):
+        from .evento_decision_service import (
+            consultar_auditoria,
+            crear_evento,
+            get_evento_activo,
+            listar_colaboradores_evento,
+            listar_eventos,
+        )
+        from .models import Omoe
+
+        proyecto = self.get_object()
+
+        if request.method == 'GET':
+            sub = request.query_params.get('scope')
+            if sub == 'activo':
+                evento = get_evento_activo(proyecto.id)
+                serialized = None
+                if evento:
+                    serialized = next(
+                        (e for e in listar_eventos(proyecto) if e['id'] == evento.id),
+                        None,
+                    )
+                return Response({'evento_activo': serialized})
+            if sub == 'auditoria':
+                limit_raw = _qp_int(request, 'limit') or 100
+                return Response(consultar_auditoria(
+                    proyecto,
+                    evento_id=_qp_int(request, 'evento'),
+                    omoe_id=_qp_int(request, 'omoe'),
+                    participante=request.query_params.get('participante'),
+                    nodo_id=_qp_int(request, 'nodo'),
+                    entidad_tipo=request.query_params.get('entidad_tipo'),
+                    entidad_id=_qp_int(request, 'entidad_id'),
+                    tipo_cambio=request.query_params.get('tipo_cambio'),
+                    limit=min(limit_raw, 500),
+                ))
+            if sub == 'historial-nodo':
+                from .evento_decision_service import historial_entidad
+
+                entidad_tipo = request.query_params.get('entidad_tipo') or 'nodo_arbol'
+                entidad_id = _qp_int(request, 'entidad_id') or _qp_int(request, 'nodo')
+                if not entidad_id:
+                    return Response(
+                        {'detail': 'Parámetro entidad_id o nodo requerido.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                return Response(historial_entidad(
+                    proyecto,
+                    entidad_tipo=entidad_tipo,
+                    entidad_id=entidad_id,
+                ))
+            if sub == 'nodos-auditoria':
+                from .evento_decision_service import listar_nodos_auditoria
+
+                return Response({
+                    'nodos': listar_nodos_auditoria(
+                        proyecto,
+                        omoe_id=_qp_int(request, 'omoe'),
+                    ),
+                })
+            if sub == 'colaboradores':
+                if not can_read_resource(request.user, proyecto, 'proyecto'):
+                    return Response(status=status.HTTP_403_FORBIDDEN)
+                return Response({'colaboradores': listar_colaboradores_evento(proyecto)})
+            return Response({'eventos': listar_eventos(proyecto)})
+
+        if not can_write_resource(request.user, proyecto, 'proyecto'):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            evento = crear_evento(proyecto, request.user, body)
+        except Omoe.DoesNotExist:
+            return Response({'detail': 'Dimensión no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        items = listar_eventos(proyecto)
+        created = next((e for e in items if e['id'] == evento.id), None)
+        return Response(created, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True,
+        methods=['get', 'put', 'patch'],
+        url_path=r'eventos-decision/(?P<evento_id>[0-9]+)',
+    )
+    def evento_decision_detail(self, request, pk=None, evento_id=None):
+        from .evento_decision_service import (
+            actualizar_evento,
+            exportar_informe_evento,
+            listar_eventos,
+        )
+        from .models import EventoDecision
+
+        proyecto = self.get_object()
+        try:
+            evento = EventoDecision.objects.prefetch_related('participantes').get(
+                pk=int(evento_id), proyecto=proyecto,
+            )
+        except (EventoDecision.DoesNotExist, TypeError, ValueError):
+            return Response({'detail': 'Evento no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if request.method == 'GET':
+            scope = request.query_params.get('scope')
+            if scope == 'informe':
+                return Response(exportar_informe_evento(evento))
+            return Response(next((e for e in listar_eventos(proyecto) if e['id'] == evento.id), None))
+
+        if not can_write_resource(request.user, proyecto, 'proyecto'):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            actualizar_evento(evento, body)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(next((e for e in listar_eventos(proyecto) if e['id'] == evento.id), None))
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=r'eventos-decision/(?P<evento_id>[0-9]+)/activar',
+    )
+    def evento_decision_activar(self, request, pk=None, evento_id=None):
+        from .evento_decision_service import activar_evento, listar_eventos
+        from .models import EventoDecision
+
+        proyecto = self.get_object()
+        if not can_write_resource(request.user, proyecto, 'proyecto'):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        try:
+            evento = EventoDecision.objects.get(pk=int(evento_id), proyecto=proyecto)
+        except (EventoDecision.DoesNotExist, TypeError, ValueError):
+            return Response({'detail': 'Evento no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            activar_evento(evento)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(next((e for e in listar_eventos(proyecto) if e['id'] == evento.id), None))
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=r'eventos-decision/(?P<evento_id>[0-9]+)/cerrar',
+    )
+    def evento_decision_cerrar(self, request, pk=None, evento_id=None):
+        from .evento_decision_service import cerrar_evento, listar_eventos
+        from .models import EventoDecision
+
+        proyecto = self.get_object()
+        if not can_write_resource(request.user, proyecto, 'proyecto'):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        try:
+            evento = EventoDecision.objects.get(pk=int(evento_id), proyecto=proyecto)
+        except (EventoDecision.DoesNotExist, TypeError, ValueError):
+            return Response({'detail': 'Evento no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            cerrar_evento(evento, justificacion=body.get('justificacion_cierre') or '')
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(next((e for e in listar_eventos(proyecto) if e['id'] == evento.id), None))
 
     @action(detail=True, methods=['get'], url_path='simulacion/opciones')
     def simulacion_opciones(self, request, pk=None):
@@ -1080,7 +1460,7 @@ class EscenarioViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
                 return Response(payload)
             body = request.data if isinstance(request.data, dict) else {}
             try:
-                payload = save_nodo_config(escenario, nodo_id, body)
+                payload = save_nodo_config(escenario, nodo_id, body, usuario=request.user)
             except DjangoValidationError as exc:
                 msgs = list(exc.messages) if getattr(exc, 'messages', None) else [str(exc)]
                 return Response({'detail': msgs[0], 'errors': msgs}, status=status.HTTP_400_BAD_REQUEST)
@@ -1101,7 +1481,7 @@ class EscenarioViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            payload = save_arbol_config(escenario, raw)
+            payload = save_arbol_config(escenario, raw, usuario=request.user)
         except DjangoValidationError as exc:
             msgs = list(exc.messages) if getattr(exc, 'messages', None) else [str(exc)]
             return Response({'detail': msgs[0], 'errors': msgs}, status=status.HTTP_400_BAD_REQUEST)
@@ -1140,7 +1520,7 @@ class EscenarioViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
 
         body = request.data if isinstance(request.data, dict) else {}
         try:
-            payload = save_grupo_config(escenario, parent_id, body)
+            payload = save_grupo_config(escenario, parent_id, body, usuario=request.user)
         except DjangoValidationError as exc:
             msgs = list(exc.messages) if getattr(exc, 'messages', None) else [str(exc)]
             return Response({'detail': msgs[0], 'errors': msgs}, status=status.HTTP_400_BAD_REQUEST)
@@ -1163,7 +1543,7 @@ class EscenarioViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            payload = apply_grupo_pesos(escenario, parent_id)
+            payload = apply_grupo_pesos(escenario, parent_id, usuario=request.user)
         except DjangoValidationError as exc:
             msgs = list(exc.messages) if getattr(exc, 'messages', None) else [str(exc)]
             return Response({'detail': msgs[0], 'errors': msgs}, status=status.HTTP_400_BAD_REQUEST)
@@ -1199,7 +1579,7 @@ class EscenarioViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
 
         body = request.data if isinstance(request.data, dict) else {}
         try:
-            payload = save_nodo_config(escenario, nid, body)
+            payload = save_nodo_config(escenario, nid, body, usuario=request.user)
         except DjangoValidationError as exc:
             msgs = list(exc.messages) if getattr(exc, 'messages', None) else [str(exc)]
             return Response({'detail': msgs[0], 'errors': msgs}, status=status.HTTP_400_BAD_REQUEST)
@@ -1233,6 +1613,63 @@ OMOE_TREE_PREFETCH = (
 )
 
 
+class TipoDimensionViewSet(viewsets.ModelViewSet):
+    """Catálogo global de tipos de dimensión (lectura autenticada; escritura admin global)."""
+    queryset = None  # set in get_queryset
+    serializer_class = None
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        from .models import TipoDimension
+        from .tipo_dimension_service import ensure_tipos_sistema
+        ensure_tipos_sistema()
+        qs = TipoDimension.objects.all().order_by('orden', 'codigo', 'id')
+        if self.action in ('list', 'retrieve') and self.request.query_params.get('all') != '1':
+            if not is_global_admin(self.request.user):
+                qs = qs.filter(activo=True)
+        return qs
+
+    def get_serializer_class(self):
+        from .tipo_dimension_serializers import TipoDimensionSerializer
+        return TipoDimensionSerializer
+
+    def create(self, request, *args, **kwargs):
+        if not is_global_admin(request.user):
+            return Response(
+                {'detail': 'Solo el administrador global puede crear tipos de dimensión.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        if not is_global_admin(request.user):
+            return Response(
+                {'detail': 'Solo el administrador global puede editar tipos de dimensión.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        if not is_global_admin(request.user):
+            return Response(
+                {'detail': 'Solo el administrador global puede desactivar tipos.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        instance = self.get_object()
+        if instance.es_sistema:
+            return Response(
+                {'detail': 'Los tipos de sistema (omoe/omoc/omor) no se eliminan; desactívelos si aplica.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Soft-delete: marcar inactivo para no romper FKs lógicos (códigos en Omoe).
+        instance.activo = False
+        instance.save(update_fields=['activo', 'fecha_actualizacion'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class OmoeViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Omoe.objects.prefetch_related(*OMOE_TREE_PREFETCH).all()
     serializer_class = OmoeSerializer
@@ -1248,6 +1685,8 @@ class OmoeViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
 
         omoe = serializer.save(orden=next_orden_omoe(proyecto.id))
         ensure_all_ramas_niveles(omoe.proyecto)
+        from .arbol_nivel_service import ensure_niveles_arbol
+        ensure_niveles_arbol(omoe.proyecto, omoe.rama_evaluacion)
         from .escenario_service import ensure_escenario_estandar
 
         ensure_escenario_estandar(omoe)
@@ -1360,6 +1799,8 @@ class NodoArbolViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
+        from .evento_decision_service import registrar_cambio
+        from .models import EventoDecisionRegistro
         from .peso_service import after_nodo_arbol_saved
 
         parent_id = self.request.data.get('parent_id')
@@ -1367,22 +1808,90 @@ class NodoArbolViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
             if Omoe.objects.filter(pk=parent_id).exists():
                 nodo = serializer.save(omoe_id=parent_id, parent=None)
                 after_nodo_arbol_saved(nodo, created=True)
-                return
-            parent = (
-                NodoArbol.objects.filter(pk=parent_id)
-                .select_related('omoe')
-                .first()
+            else:
+                parent = (
+                    NodoArbol.objects.filter(pk=parent_id)
+                    .select_related('omoe')
+                    .first()
+                )
+                if parent:
+                    nodo = serializer.save(parent_id=parent_id, omoe_id=parent.omoe_id)
+                    after_nodo_arbol_saved(nodo, created=True)
+                else:
+                    nodo = serializer.save()
+                    after_nodo_arbol_saved(nodo, created=True)
+        else:
+            nodo = serializer.save()
+            after_nodo_arbol_saved(nodo, created=True)
+        if nodo.omoe_id:
+            registrar_cambio(
+                nodo.omoe.proyecto_id,
+                self.request.user,
+                tipo_cambio=EventoDecisionRegistro.TIPO_ESTRUCTURA,
+                entidad_tipo='nodo_arbol',
+                entidad_id=nodo.id,
+                entidad_nombre=nodo.nombre,
+                campo='creacion',
+                valor_anterior=None,
+                valor_nuevo={'nombre': nodo.nombre, 'tipo_nivel_id': nodo.tipo_nivel_id},
+                omoe_id=nodo.omoe_id,
+                notas='Nodo creado en el árbol',
             )
-            if parent:
-                nodo = serializer.save(parent_id=parent_id, omoe_id=parent.omoe_id)
-                after_nodo_arbol_saved(nodo, created=True)
-                return
-        nodo = serializer.save()
-        after_nodo_arbol_saved(nodo, created=True)
 
     def perform_update(self, serializer):
-        peso_changed = 'peso' in serializer.validated_data
+        from .evento_decision_service import auditar_campos_instancia, registrar_cambio
+        from .models import EventoDecisionRegistro
+
+        instance = serializer.instance
+        validated = serializer.validated_data
+        campos_snapshot = (
+            'peso', 'justificacion_peso',
+            'tipo_criterio', 'familia_funciones', 'parametros_funcion',
+            'modo_evaluacion', 'valor_umbral', 'valor_meta',
+            'nombre', 'descripcion', 'codigo', 'aplica', 'observaciones',
+        )
+        valores_anteriores = {
+            campo: getattr(instance, campo, None)
+            for campo in campos_snapshot
+        }
+        # Copiar dicts mutables (JSONField) para no comparar contra la misma ref.
+        for campo in ('parametros_funcion',):
+            val = valores_anteriores.get(campo)
+            if isinstance(val, dict):
+                valores_anteriores[campo] = dict(val)
+
+        peso_changed = 'peso' in validated
         nodo = serializer.save()
+        if nodo.omoe_id:
+            auditar_campos_instancia(
+                nodo.omoe.proyecto_id,
+                self.request.user,
+                instancia=nodo,
+                validated_data=validated,
+                tipo_entidad='nodo_arbol',
+                entidad_nombre=nodo.nombre,
+                omoe_id=nodo.omoe_id,
+                valores_anteriores=valores_anteriores,
+            )
+            for campo in ('nombre', 'descripcion', 'codigo', 'aplica', 'observaciones'):
+                if campo not in validated:
+                    continue
+                anterior = valores_anteriores.get(campo)
+                nuevo = validated[campo]
+                if anterior == nuevo:
+                    continue
+                registrar_cambio(
+                    nodo.omoe.proyecto_id,
+                    self.request.user,
+                    tipo_cambio=EventoDecisionRegistro.TIPO_ESTRUCTURA,
+                    entidad_tipo='nodo_arbol',
+                    entidad_id=nodo.id,
+                    entidad_nombre=nodo.nombre,
+                    campo=campo,
+                    valor_anterior=anterior,
+                    valor_nuevo=nuevo,
+                    omoe_id=nodo.omoe_id,
+                )
         if peso_changed and nodo.aplica:
             from .peso_service import fix_peso_total_to_100
 
@@ -1439,7 +1948,7 @@ class NodoArbolViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
             return Response(payload)
         body = request.data if isinstance(request.data, dict) else {}
         try:
-            payload = save_nodo_config(escenario, nodo.id, body)
+            payload = save_nodo_config(escenario, nodo.id, body, usuario=request.user)
         except DjangoValidationError as exc:
             msgs = list(exc.messages) if getattr(exc, 'messages', None) else [str(exc)]
             return Response({'detail': msgs[0], 'errors': msgs}, status=status.HTTP_400_BAD_REQUEST)

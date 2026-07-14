@@ -7,8 +7,9 @@ import {
   MODELO_LABEL_PLURAL,
 } from './constants';
 import { getNodeChildren } from './treeUtils';
-import { effectiveOmoeRama, RAMA_META } from './ramaContext';
+import { effectiveOmoeRama, getRamaMeta } from './ramaContext';
 import { canAddChildNode } from './nivelArbolRules';
+import { hasNodePendingData } from './conceptMapUtils';
 
 const INDENT_PX = 4;
 
@@ -43,6 +44,7 @@ function TreeItem({
   toggleExpand,
   canAddChild = true,
   grupoPesoInfo = null,
+  omoe = null,
 }) {
   const hasActualChildren = children && React.Children.count(children) > 0;
   const nodeKey = `${level}-${node.id}`;
@@ -57,7 +59,9 @@ function TreeItem({
   const inactive = isNodoArbol && node.aplica === false;
   const dimensionRama =
     level === CRITERIO_LEVELS.OMOE ? effectiveOmoeRama(node) : null;
-  const ramaBadge = dimensionRama ? RAMA_META[dimensionRama] : null;
+  const ramaBadge = dimensionRama ? getRamaMeta(dimensionRama) : null;
+  const pendingContext = level === CRITERIO_LEVELS.OMOE ? node : omoe;
+  const pending = !inactive && hasNodePendingData(level, node, pendingContext);
 
   return (
     <div>
@@ -95,6 +99,12 @@ function TreeItem({
         >
           <span className="text-[10px] text-gray-400 uppercase block flex items-center gap-1 truncate">
             <span className="truncate">{levelBadgeLabel(level, node)}</span>
+            {pending && (
+              <span
+                className="w-2 h-2 rounded-full bg-amber-500 shrink-0"
+                title="Configuración incompleta (utilidad, constantes o peso)"
+              />
+            )}
             {ramaBadge && (
               <span className={`normal-case px-1 py-0.5 rounded text-[9px] font-semibold shrink-0 ${ramaBadge.badgeClass}`}>
                 {ramaBadge.label}
@@ -195,6 +205,7 @@ function renderNodoSubtree(nodes, ctx) {
           ctx.nivelesRama,
         )}
         grupoPesoInfo={ctx.gruposPeso?.[String(node.id)]}
+        omoe={ctx.omoe}
         children={renderNodoSubtree(children, {
           ...ctx,
           parentId: node.id,
@@ -258,6 +269,7 @@ function CriteriosTreeSidebar({
   onSelect,
   onAddChild,
   onNewDimension,
+  onImportDimension,
   onConfigureNiveles,
   loading,
   gruposPeso = {},
@@ -290,6 +302,13 @@ function CriteriosTreeSidebar({
           className="btn w-full btn-primary text-sm"
         >
           + Nueva dimensión
+        </button>
+        <button
+          type="button"
+          onClick={onImportDimension}
+          className="btn w-full border-gray-200 dark:border-gray-700/60 text-sm"
+        >
+          Importar árbol desde proyecto
         </button>
         <button
           type="button"
@@ -351,6 +370,7 @@ function CriteriosTreeSidebar({
                         parentId: omoe.id,
                         parentLevel: CRITERIO_LEVELS.OMOE,
                         parentNode: omoe,
+                        omoe,
                         dimensionRama,
                         nivelesRama,
                         gruposPeso,

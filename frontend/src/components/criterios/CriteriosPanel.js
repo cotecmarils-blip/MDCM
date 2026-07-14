@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { omoeApi, nivelesArbolApi, nodoArbolApi, escenarios } from '../../api';
+import { omoeApi, nivelesArbolApi, nodoArbolApi, proyectos, escenarios } from '../../api';
 import SplitColumnLayout from '../../layout/SplitColumnLayout';
 import CriteriosConceptMap from './CriteriosConceptMap';
 import CriteriosTreeSidebar from './CriteriosTreeSidebar';
 import CriterioDetailPanel from './CriterioDetailPanel';
 import EscenarioGlobalBar from './EscenarioGlobalBar';
+import ImportarDimensionModal from './ImportarDimensionModal';
 import NivelesArbolConfig from './NivelesArbolConfig';
 import TipoNivelPickerModal from './TipoNivelPickerModal';
 import { resolveEditSelection } from './treeUtils';
@@ -31,11 +32,16 @@ function resolveOmoeIdFromSelection(selection) {
 
 function CriteriosPanel({ proyectoId }) {
   const [forest, setForest] = useState([]);
-  const [nivelesByRama, setNivelesByRama] = useState({ omoe: [], omoc: [], omor: [] });
+  const [nivelesByRama, setNivelesByRama] = useState({});
   const [loading, setLoading] = useState(true);
   const [selection, setSelection] = useState({ mode: 'empty' });
   const [configOpen, setConfigOpen] = useState(false);
   const [typePicker, setTypePicker] = useState({ open: false, parentLevel: null, parentNode: null });
+  const [importOpen, setImportOpen] = useState(false);
+  const [importCatalog, setImportCatalog] = useState([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState(null);
   const [leftView, setLeftView] = useState('arbol');
   const [mapEditMode, setMapEditMode] = useState(false);
   const [infoCollapsed, setInfoCollapsed] = useState(false);
@@ -48,16 +54,11 @@ function CriteriosPanel({ proyectoId }) {
     try {
       const res = await nivelesArbolApi.getAll(proyectoId);
       const data = res.data || {};
-      const grouped = {
-        omoe: data.omoe || [],
-        omoc: data.omoc || [],
-        omor: data.omor || [],
-      };
-      setNivelesByRama(grouped);
-      return grouped;
+      setNivelesByRama(data);
+      return data;
     } catch (err) {
       console.error('Error cargando niveles del árbol:', err);
-      return { omoe: [], omoc: [], omor: [] };
+      return {};
     }
   }, [proyectoId]);
 
@@ -206,6 +207,55 @@ function CriteriosPanel({ proyectoId }) {
     });
   };
 
+  const handleOpenImportDimension = async () => {
+    setImportOpen(true);
+    setImportError(null);
+    try {
+      setImportLoading(true);
+      const res = await proyectos.catalogoDimensiones(proyectoId);
+      setImportCatalog(res.data?.items || []);
+    } catch (err) {
+      console.error(err);
+      setImportCatalog([]);
+      setImportError(err.response?.data?.detail || 'No se pudo cargar el catálogo de dimensiones.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleImportDimension = async ({ fuente_omoe_id, nombre_modelo }) => {
+    try {
+      setImporting(true);
+      setImportError(null);
+      const res = await proyectos.importarDimension(proyectoId, {
+        fuente_omoe_id,
+        nombre_modelo,
+      });
+      const data = await loadTree();
+      const created = res.data?.omoe || data.find((d) => d.id === res.data?.omoe_id);
+      setImportOpen(false);
+      if (created) {
+        setSelection({
+          mode: 'edit',
+          level: CRITERIO_LEVELS.OMOE,
+          node: created,
+          siblings: data,
+          parentId: null,
+          dimensionRama: effectiveOmoeRama(created),
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setImportError(
+        err.response?.data?.detail
+          || err.response?.data?.fuente_omoe_id?.[0]
+          || 'No se pudo importar la dimensión.',
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleAddChild = (parentLevel, parentNode) => {
     const rama =
       parentLevel === CRITERIO_LEVELS.OMOE
@@ -346,6 +396,7 @@ function CriteriosPanel({ proyectoId }) {
               onSelect={handleSelect}
               onAddChild={handleAddChild}
               onNewDimension={handleNewDimension}
+              onImportDimension={handleOpenImportDimension}
               onConfigureNiveles={() => setConfigOpen(true)}
               loading={loading}
               gruposPeso={gruposPeso}
@@ -383,7 +434,7 @@ function CriteriosPanel({ proyectoId }) {
         proyectoId={proyectoId}
         open={configOpen}
         onClose={() => setConfigOpen(false)}
-        onSaved={(data) => setNivelesByRama(data || { omoe: [], omoc: [], omor: [] })}
+        onSaved={(data) => setNivelesByRama(data || {})}
       />
 
       <TipoNivelPickerModal
@@ -401,6 +452,16 @@ function CriteriosPanel({ proyectoId }) {
         )}
         onSelect={handleTypeSelected}
         onCancel={() => setTypePicker({ open: false, parentLevel: null, parentNode: null })}
+      />
+
+      <ImportarDimensionModal
+        open={importOpen}
+        items={importCatalog}
+        loading={importLoading}
+        importing={importing}
+        error={importError}
+        onClose={() => !importing && setImportOpen(false)}
+        onImport={handleImportDimension}
       />
     </div>
   );

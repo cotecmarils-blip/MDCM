@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import UtilidadCurveChart from '../criterios/UtilidadCurveChart';
+import { usesEscenarioPesos } from '../criterios/escenarioAgregacionConstants';
 import { valorCellKey } from './evaluacionUtils';
 
 const inputClass =
@@ -124,6 +126,8 @@ function dimensionKey(matrix) {
 
 function EvaluacionDimensionTable({ matrix, valores, onChange, disabled, previewMode }) {
   const { filas, columnas, columnasMeta } = matrix;
+  const esValorBruto = matrix.modo_valor_terminal === 'valor_bruto';
+  const showEscenarioPesos = usesEscenarioPesos(matrix.escenario_agregacion);
 
   if (!columnas.length) {
     return (
@@ -144,9 +148,11 @@ function EvaluacionDimensionTable({ matrix, valores, onChange, disabled, preview
   return (
     <div>
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-        {previewMode
-          ? 'Vista de referencia: pesos por misión y constantes. Los campos x se habilitan al elegir una alternativa.'
-          : 'Filas = criterios · Columnas = escenarios (misión) · Ingrese la variable x en cada celda.'}
+        {esValorBruto
+          ? 'Dimensión de costos: ingrese el valor x (bruto). Se suma sin curvas de utilidad ni pesos entre escenarios.'
+          : previewMode
+            ? 'Vista de referencia: pesos, constantes y curvas u(x) por misión. Los campos x se habilitan al elegir una alternativa.'
+            : 'Filas = criterios · Columnas = escenarios (misión) · Ingrese x; la curva muestra u(x) según la función del nodo.'}
       </p>
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700/60">
         <table className="min-w-full text-sm border-collapse">
@@ -159,7 +165,11 @@ function EvaluacionDimensionTable({ matrix, valores, onChange, disabled, preview
                 <th
                   key={esc.id}
                   className="px-2 py-2 text-center border-b border-gray-200 dark:border-gray-700/60 min-w-[6.5rem]"
-                  title={esc.peso != null ? `${esc.nombre} (${esc.peso}%)` : esc.nombre}
+                  title={
+                    showEscenarioPesos && esc.peso != null
+                      ? `${esc.nombre} (${esc.peso}%)`
+                      : esc.nombre
+                  }
                 >
                   <span className="block text-xs font-bold text-navy-600 dark:text-navy-400">
                     {esc.label || `M${idx + 1}`}
@@ -167,7 +177,7 @@ function EvaluacionDimensionTable({ matrix, valores, onChange, disabled, preview
                   <span className="block text-[11px] font-normal text-gray-600 dark:text-gray-400 leading-tight mt-0.5">
                     {esc.nombre}
                   </span>
-                  {esc.peso != null && (
+                  {showEscenarioPesos && esc.peso != null && (
                     <span className="block text-[10px] text-gray-400 mt-0.5">{esc.peso}%</span>
                   )}
                 </th>
@@ -233,6 +243,20 @@ function EvaluacionDimensionTable({ matrix, valores, onChange, disabled, preview
                           onChange={(v) => onChange(key, v)}
                           disabled={disabled}
                         />
+                        {colMeta.modo_evaluacion !== 'incertidumbre'
+                          && !esValorBruto
+                          && (colMeta.familia_funciones || col.familia_funciones)
+                          && colMeta.input_kind !== 'riesgo' && (
+                          <UtilidadCurveChart
+                            familia={colMeta.familia_funciones || col.familia_funciones}
+                            params={colMeta.constantes || col.constantes || {}}
+                            tipoCriterio={colMeta.tipo_criterio || col.tipo_criterio || ''}
+                            tipoDato={colMeta.tipo_dato || col.tipo_dato || ''}
+                            xValue={valores[key]}
+                            compact
+                            className="mt-1.5"
+                          />
+                        )}
                       </td>
                     );
                   })}

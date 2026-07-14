@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import { validatePesosDimensionesPercent } from '../../utils/pesoUtils';
 import MetodoInfoDropdown from './MetodoInfoDropdown';
+import ParetoEpsilonField from './ParetoEpsilonField';
+import { parseParetoEpsilonInput } from './paretoEpsilonUtils';
 import { NORMALIZATION_METHOD_DOCS, WEIGHT_METHOD_DOCS } from './simulacionMethodDocs';
 
 const PESO_INPUT_CLASS =
@@ -82,25 +84,43 @@ function SimulacionConfigPanel({ opcionesMeta, config, onChange, disabled }) {
         <span>Aplicar filtro Pareto (solo alternativas no dominadas)</span>
       </label>
 
+      {Boolean(config.aplicar_pareto) && (
+        <ParetoEpsilonField
+          value={config.pareto_epsilon}
+          onChange={(pareto_epsilon) => onChange({ ...config, pareto_epsilon })}
+          disabled={disabled}
+          error={
+            config.pareto_epsilon != null && !parseParetoEpsilonInput(config.pareto_epsilon).ok
+              ? parseParetoEpsilonInput(config.pareto_epsilon).message
+              : null
+          }
+          compact
+        />
+      )}
+
       <div>
         <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">
-          Dimensiones y tipo (min / max) *
+          Dimensiones del cálculo y sentido (MIN / MAX) *
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-          Define si en cada criterio mayor o menor valor es mejor. Equivale a{' '}
-          <code className="text-[10px] bg-gray-100 dark:bg-navy-800 px-1 rounded">directions</code>{' '}
-          del notebook (Pareto y normalización).
+          Marque qué dimensiones participan en el cálculo y si mayor o menor valor es mejor.
         </p>
         <div className="space-y-2">
-          {dimensiones.map((dim) => (
+          {dimensiones.map((dim) => {
+            const selected = (config.dimensiones_normalizar || []).includes(dim.nombre);
+            return (
             <div
               key={dim.omoe_id}
-              className="flex flex-wrap items-center gap-3 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700/60 bg-white/60 dark:bg-navy-950/30"
+              className={`flex flex-wrap items-center gap-3 p-2.5 rounded-lg border ${
+                selected
+                  ? 'border-navy-500/30 bg-white/60 dark:bg-navy-950/30'
+                  : 'border-gray-200 dark:border-gray-700/60 opacity-75'
+              }`}
             >
               <label className="flex items-center gap-2 text-sm cursor-pointer min-w-0 flex-1">
                 <input
                   type="checkbox"
-                  checked={(config.dimensiones_normalizar || []).includes(dim.nombre)}
+                  checked={selected}
                   disabled={disabled}
                   onChange={() => toggleDimension(dim.nombre)}
                   className="rounded border-gray-300 shrink-0"
@@ -110,16 +130,17 @@ function SimulacionConfigPanel({ opcionesMeta, config, onChange, disabled }) {
               </label>
               <select
                 value={getDirection(dim.omoe_id) || dim.direction || 'max'}
-                disabled={disabled}
+                disabled={disabled || !selected}
                 onChange={(e) => setDirection(dim.omoe_id, e.target.value)}
-                className="form-select text-sm w-full sm:w-auto min-w-[12rem] shrink-0"
+                className="form-select text-sm w-full sm:w-auto min-w-[12rem] shrink-0 disabled:opacity-50"
                 aria-label={`Tipo de dimensión ${dim.nombre}`}
               >
                 <option value="max">Mayor es mejor (MAX)</option>
                 <option value="min">Menor es mejor (MIN)</option>
               </select>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

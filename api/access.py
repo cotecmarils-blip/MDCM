@@ -37,8 +37,13 @@ User = get_user_model()
 ACCESS_CODE_EXPIRED = 'access_expired'
 ACCESS_CODE_DISABLED = 'access_disabled'
 ACCESS_CODE_NO_ACCESS = 'no_access'
+ACCESS_CODE_ACCOUNT_DISABLED = 'account_disabled'
 
 LOGIN_ACCESS_MESSAGES = {
+    ACCESS_CODE_ACCOUNT_DISABLED: (
+        'Su cuenta está deshabilitada. '
+        'Comuníquese con el administrador del sistema.'
+    ),
     ACCESS_CODE_EXPIRED: (
         'Su tiempo de acceso al software ha terminado. '
         'Para solicitar acceso nuevamente, comuníquese con el gerente del proyecto.'
@@ -108,35 +113,39 @@ def membership_access_code(membership):
 
 
 def check_user_login_access(user):
-    """Verifica si el usuario puede iniciar sesión en la aplicación."""
+    """Verifica si el usuario puede iniciar sesión (solo bloqueo a nivel de cuenta)."""
     if not user.is_authenticated:
         return False, ACCESS_CODE_NO_ACCESS
+    if not user.is_active:
+        return False, ACCESS_CODE_ACCOUNT_DISABLED
+    return True, None
+
+
+def can_manage_users_globally(user) -> bool:
+    """Admin global o gerente con al menos un proyecto activo."""
+    if not user.is_authenticated:
+        return False
     if is_global_admin(user):
-        return True, None
+        return True
+    return ProyectoMembership.objects.filter(
+        usuario=user,
+        rol=ProyectoMembership.ROL_JEFE,
+    ).filter(valid_membership_q()).exists()
 
-    memberships = list(
-        ProyectoMembership.objects.filter(usuario=user).only(
-            'activo', 'fecha_acceso_hasta', 'rol',
+
+def manageable_proyecto_ids(user):
+    if not user.is_authenticated:
+        return set()
+    if is_global_admin(user):
+        return set(Proyecto.objects.values_list('id', flat=True))
+    return set(
+        ProyectoMembership.objects.filter(
+            usuario=user,
+            rol=ProyectoMembership.ROL_JEFE,
         )
+        .filter(valid_membership_q())
+        .values_list('proyecto_id', flat=True)
     )
-    if any(is_membership_access_valid(m) for m in memberships):
-        return True, None
-
-    if not memberships:
-        return False, ACCESS_CODE_NO_ACCESS
-
-    has_expired = any(
-        m.activo and m.fecha_acceso_hasta and m.fecha_acceso_hasta < timezone.now()
-        for m in memberships
-    )
-    if has_expired:
-        return False, ACCESS_CODE_EXPIRED
-
-    has_disabled = any(not m.activo for m in memberships)
-    if has_disabled:
-        return False, ACCESS_CODE_DISABLED
-
-    return False, ACCESS_CODE_NO_ACCESS
 
 
 def compute_fecha_acceso_hasta(dias=0, horas=0, minutos=0, *, dias_acceso=None):

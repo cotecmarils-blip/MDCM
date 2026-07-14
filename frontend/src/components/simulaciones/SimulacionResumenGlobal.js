@@ -1,4 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import {
+  buildEscenarioResumenRows,
+  escenarioResumenLabel,
+} from './simulacionEscenarioResumenUtils';
 
 const MADM_LABELS = {
   topsis: 'TOPSIS',
@@ -28,9 +32,16 @@ function SimulacionResumenGlobal({ resultado }) {
   const altNamesNorm = norm?.pareto_alternatives || [];
   const dimNames = norm?.dimensions || [];
 
+  const escenarioRows = useMemo(
+    () => buildEscenarioResumenRows(alternativas),
+    [alternativas],
+  );
+
   if (!activas.length) return null;
 
   const ganador = activas[0];
+  const showEscenarioResumen = escenarioRows.length > 0;
+  const escenariosGanador = escenarioRows.filter((r) => r.alternativaId === ganador.id);
 
   return (
     <div className="rounded-xl border border-navy-500/30 bg-gradient-to-br from-navy-500/5 to-transparent dark:from-navy-500/10 p-4 sm:p-5 space-y-4">
@@ -60,6 +71,17 @@ function SimulacionResumenGlobal({ resultado }) {
               : ganador.valor_global?.toFixed(4)}
           </p>
           <p className="text-[10px] text-gray-400 mt-1">Puntuación {metodoMadm}</p>
+          {escenariosGanador.length > 0 && (
+            <ul className="mt-2 space-y-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+              {escenariosGanador.map((row) => (
+                <li key={`${row.omoeId}-${row.escenario}`}>
+                  <span className="font-medium text-gray-600 dark:text-gray-300">{row.dimension}:</span>
+                  {' '}
+                  bajo «{row.escenario}»
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div className="sm:col-span-2 rounded-lg bg-white dark:bg-navy-900 border border-gray-200 dark:border-gray-700/60 overflow-x-auto">
@@ -97,6 +119,53 @@ function SimulacionResumenGlobal({ resultado }) {
         <p className="text-xs text-amber-700 dark:text-amber-400">
           Alternativas dominadas por Pareto no participan en el ranking global.
         </p>
+      )}
+
+      {showEscenarioResumen && (
+        <div className="rounded-lg border border-blue-200/60 dark:border-blue-800/40 bg-white dark:bg-navy-900 overflow-x-auto">
+          <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800/80">
+            <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+              Escenario elegido por alternativa
+            </h4>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              En mínimo/máximo-mejor (Eq. 22) se toma el contexto más favorable; en peor caso
+              (Eq. 23) el más adverso. Cada escenario se evalúa por separado.
+            </p>
+          </div>
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-navy-900/60 text-left text-[10px] uppercase text-gray-400">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Alternativa</th>
+                <th className="px-3 py-2 font-semibold">Dimensión</th>
+                <th className="px-3 py-2 font-semibold">Modo</th>
+                <th className="px-3 py-2 font-semibold">Escenario elegido</th>
+                <th className="px-3 py-2 font-semibold">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {escenarioRows.map((row) => (
+                <tr
+                  key={`${row.alternativaId}-${row.omoeId}`}
+                  className={`border-t border-gray-100 dark:border-gray-800/80 ${
+                    row.alternativaId === ganador.id ? 'bg-navy-500/5' : ''
+                  }`}
+                >
+                  <td className="px-3 py-2 font-medium">{row.alternativa}</td>
+                  <td className="px-3 py-2">{row.dimension}</td>
+                  <td className="px-3 py-2 text-xs text-gray-500">
+                    {escenarioResumenLabel(row.agregacion)}
+                  </td>
+                  <td className="px-3 py-2 font-semibold text-navy-700 dark:text-navy-300">
+                    {row.escenario}
+                  </td>
+                  <td className="px-3 py-2 font-mono">
+                    {row.valor != null ? Number(row.valor).toFixed(4) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {matrizNorm?.length > 0 && (

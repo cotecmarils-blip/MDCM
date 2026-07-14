@@ -329,7 +329,7 @@ function CriterioDetailPanel({
         proyectoId={proyectoId}
         omoeId={level === CRITERIO_LEVELS.OMOE && isEdit ? item?.id : null}
         compact={compact}
-        omitPesoEvaluacion={level === CRITERIO_LEVELS.NODO_ARBOL}
+        omitPesoEvaluacion={isCreate || level === CRITERIO_LEVELS.NODO_ARBOL}
       />
 
       {error && (

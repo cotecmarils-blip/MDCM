@@ -11,6 +11,7 @@ from .upload_utils import (
     documento_criterio_upload,
     documento_upload,
     proyecto_foto_upload,
+    usuario_foto_upload,
 )
 from .evaluacion_rama_choices import (
     RAMA_AUTO,
@@ -19,6 +20,48 @@ from .evaluacion_rama_choices import (
     RAMA_OMOE,
     RAMA_OMOR,
 )
+
+
+class TipoDimension(models.Model):
+    """Catálogo global de tipos de dimensión (extensible más allá de OMOE/OMOC/OMOR)."""
+    SENTIDO_MAX = 'max'
+    SENTIDO_MIN = 'min'
+    SENTIDO_CHOICES = [
+        (SENTIDO_MAX, 'Maximizar (beneficio)'),
+        (SENTIDO_MIN, 'Minimizar (costo / riesgo)'),
+    ]
+
+    codigo = models.CharField(
+        max_length=32,
+        unique=True,
+        help_text='Código estable (p. ej. omoe, omoc, sostenibilidad).',
+    )
+    nombre = models.CharField(max_length=128)
+    descripcion = models.TextField(blank=True)
+    sentido_optimizacion = models.CharField(
+        max_length=8,
+        choices=SENTIDO_CHOICES,
+        default=SENTIDO_MAX,
+        help_text='Dirección MADM/Pareto: max o min.',
+    )
+    escenario_agregacion_default = models.CharField(max_length=24, default='compensatorio')
+    modo_valor_terminal_default = models.CharField(max_length=16, default='utilidad')
+    activo = models.BooleanField(default=True)
+    es_sistema = models.BooleanField(
+        default=False,
+        help_text='Tipos semilla (omoe/omoc/omor); no se elimina el código.',
+    )
+    orden = models.PositiveIntegerField(default=0)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Tipo de dimensión'
+        verbose_name_plural = 'Tipos de dimensión'
+        ordering = ['orden', 'codigo', 'id']
+
+    def __str__(self):
+        return f'{self.codigo} — {self.nombre}'
 
 
 class Proyecto(models.Model):
@@ -314,14 +357,9 @@ class Escenario(models.Model):
     descripcion = models.TextField(blank=True)
     peso = models.DecimalField(max_digits=7, decimal_places=2, default=Decimal('0'))
     rama_evaluacion = models.CharField(
-        max_length=8,
-        choices=[
-            (RAMA_OMOE, 'OMOE — Efectividad / desempeño'),
-            (RAMA_OMOC, 'OMOC — Costo'),
-            (RAMA_OMOR, 'OMOR — Riesgo'),
-        ],
+        max_length=32,
         default=RAMA_OMOE,
-        help_text='Rama OMOE / OMOC / OMOR asociada al escenario.',
+        help_text='Rama / tipo de dimensión (código del catálogo TipoDimension).',
     )
     orden = models.PositiveIntegerField(default=0)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
@@ -465,10 +503,9 @@ class Omoe(models.Model):
     )
     observaciones = models.TextField(blank=True)
     rama_evaluacion = models.CharField(
-        max_length=8,
-        choices=RAMA_EVALUACION_CHOICES,
+        max_length=32,
         default=RAMA_OMOE,
-        help_text='Tipo de dimensión: OMOE, OMOC u OMOR.',
+        help_text='Código del tipo de dimensión (catálogo global).',
     )
     orden = models.PositiveIntegerField(default=0)
     tipo_criterio = models.CharField(max_length=64, blank=True, default='')
@@ -504,6 +541,16 @@ class Omoe(models.Model):
         blank=True,
         default=dict,
         help_text='Configuración específica del método de cálculo (escenarios, preferencias, etc.).',
+    )
+    escenario_agregacion = models.CharField(
+        max_length=24,
+        default='compensatorio',
+        help_text='Cómo se combinan los escenarios al calcular la dimensión.',
+    )
+    modo_valor_terminal = models.CharField(
+        max_length=16,
+        default='utilidad',
+        help_text='Utilidad normalizada o valor x tal cual (típico en costos).',
     )
     enable_sensitivity_analysis = models.BooleanField(
         default=False,
@@ -562,10 +609,10 @@ class GrupoAfinidad(models.Model):
     familia_funciones = models.CharField(max_length=64, blank=True, default='')
     parametros_funcion = models.JSONField(blank=True, default=dict)
     rama_evaluacion = models.CharField(
-        max_length=8,
-        choices=RAMA_EVALUACION_CHOICES,
+        max_length=32,
         default=RAMA_AUTO,
-        help_text='Clasificación OMOE / OMOC / OMOR para resultados y gráficos.',
+        blank=True,
+        help_text='Código de tipo de dimensión o «auto».',
     )
     peso = models.DecimalField(max_digits=7, decimal_places=2, default=Decimal('0'))
     orden_visual = models.PositiveIntegerField(default=0)
@@ -679,14 +726,9 @@ class ProyectoNivelArbol(models.Model):
         Proyecto, on_delete=models.CASCADE, related_name='niveles_arbol'
     )
     rama_evaluacion = models.CharField(
-        max_length=8,
-        choices=[
-            ('omoe', 'OMOE — Efectividad / desempeño'),
-            ('omoc', 'OMOC — Costo'),
-            ('omor', 'OMOR — Riesgo'),
-        ],
+        max_length=32,
         default='omoe',
-        help_text='Rama de dimensión a la que aplica este nivel (por proyecto).',
+        help_text='Código de tipo de dimensión a la que aplica este nivel (por proyecto).',
     )
     orden = models.PositiveSmallIntegerField(
         help_text='Posición del nivel (1–9) bajo la dimensión.',
@@ -1222,3 +1264,255 @@ class OfertanteAlternativa(models.Model):
 
     def __str__(self):
         return f'Ofertante {self.membership_id} → alternativa {self.alternativa_id}'
+
+
+class UserProfile(models.Model):
+    """Datos extendidos del usuario (foto de perfil, etc.)."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='profile',
+    )
+    foto = models.ImageField(
+        upload_to=usuario_foto_upload,
+        blank=True,
+        null=True,
+        max_length=FILE_FIELD_MAX_LENGTH,
+    )
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Perfil de usuario'
+        verbose_name_plural = 'Perfiles de usuario'
+
+    def __str__(self):
+        return f'Perfil de {self.user_id}'
+
+
+class ConfigArbolHistorial(models.Model):
+    """Registro de sesiones de trabajo expertas sobre la configuración del árbol."""
+
+    MOMENTO_ESTRUCTURA = 'estructura'
+    MOMENTO_UTILIDAD = 'utilidad'
+    MOMENTO_PESOS = 'pesos'
+    MOMENTO_EVALUACION = 'evaluacion'
+
+    MOMENTO_CHOICES = [
+        (MOMENTO_ESTRUCTURA, 'Estructura del árbol'),
+        (MOMENTO_UTILIDAD, 'Funciones de utilidad'),
+        (MOMENTO_PESOS, 'Pesos y escenarios'),
+        (MOMENTO_EVALUACION, 'Matriz de evaluación'),
+    ]
+
+    proyecto = models.ForeignKey(
+        Proyecto, on_delete=models.CASCADE, related_name='config_historial',
+    )
+    omoe = models.ForeignKey(
+        Omoe, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='config_historial',
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='config_historial_registros',
+    )
+    momento = models.CharField(max_length=16, choices=MOMENTO_CHOICES)
+    notas = models.TextField(blank=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Historial de configuración del árbol'
+        verbose_name_plural = 'Historial de configuración del árbol'
+        ordering = ['-fecha_creacion', '-id']
+
+    def __str__(self):
+        return f'{self.proyecto_id} · {self.momento} · {self.fecha_creacion:%Y-%m-%d}'
+
+
+class EventoDecision(models.Model):
+    """Mesa de trabajo / reunión de expertos para alimentar el árbol."""
+
+    ESTADO_BORRADOR = 'borrador'
+    ESTADO_ACTIVO = 'activo'
+    ESTADO_CERRADO = 'cerrado'
+
+    ESTADO_CHOICES = [
+        (ESTADO_BORRADOR, 'Borrador'),
+        (ESTADO_ACTIVO, 'Activo'),
+        (ESTADO_CERRADO, 'Cerrado'),
+    ]
+
+    TIPO_CONSENSO = 'consenso'
+    TIPO_AGREGACION = 'agregacion'
+
+    TIPO_PROCESO_CHOICES = [
+        (TIPO_CONSENSO, 'Consenso directo'),
+        (TIPO_AGREGACION, 'Agregación individual (futuro)'),
+    ]
+
+    proyecto = models.ForeignKey(
+        Proyecto, on_delete=models.CASCADE, related_name='eventos_decision',
+    )
+    omoe = models.ForeignKey(
+        Omoe, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='eventos_decision',
+    )
+    nombre = models.CharField(max_length=255)
+    descripcion = models.TextField(blank=True)
+    estado = models.CharField(
+        max_length=16, choices=ESTADO_CHOICES, default=ESTADO_BORRADOR,
+    )
+    tipo_proceso = models.CharField(
+        max_length=16, choices=TIPO_PROCESO_CHOICES, default=TIPO_CONSENSO,
+    )
+    mediador_usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='eventos_decision_mediados',
+    )
+    mediador_nombre = models.CharField(max_length=255, blank=True)
+    mediador_cargo = models.CharField(max_length=255, blank=True)
+    mediador_dependencia = models.CharField(max_length=255, blank=True)
+    fecha_inicio = models.DateTimeField(null=True, blank=True)
+    fecha_cierre = models.DateTimeField(null=True, blank=True)
+    justificacion_cierre = models.TextField(blank=True)
+    ALCANCE_DIMENSION_COMPLETA = 'dimension_completa'
+    ALCANCE_NODOS_SELECCIONADOS = 'nodos_seleccionados'
+    ALCANCE_MODO_CHOICES = [
+        (ALCANCE_DIMENSION_COMPLETA, 'Dimensión completa'),
+        (ALCANCE_NODOS_SELECCIONADOS, 'Nodos seleccionados'),
+    ]
+    alcance_modo = models.CharField(
+        max_length=24,
+        choices=ALCANCE_MODO_CHOICES,
+        default=ALCANCE_DIMENSION_COMPLETA,
+    )
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='eventos_decision_creados',
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Evento de decisión'
+        verbose_name_plural = 'Eventos de decisión'
+        ordering = ['-fecha_creacion', '-id']
+
+    def __str__(self):
+        return f'{self.proyecto_id} · {self.nombre} ({self.estado})'
+
+
+class EventoDecisionParticipante(models.Model):
+    evento = models.ForeignKey(
+        EventoDecision, on_delete=models.CASCADE, related_name='participantes',
+    )
+    nombre = models.CharField(max_length=255)
+    cargo = models.CharField(max_length=255, blank=True)
+    rol = models.CharField(max_length=128, blank=True)
+    dependencia = models.CharField(max_length=255, blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='participaciones_evento_decision',
+    )
+
+    class Meta:
+        verbose_name = 'Participante de evento'
+        verbose_name_plural = 'Participantes de evento'
+        ordering = ['nombre', 'id']
+
+    def __str__(self):
+        return self.nombre
+
+
+class EventoDecisionNodo(models.Model):
+    """Nodo del árbol incluido en el alcance de auditoría de una sesión."""
+
+    evento = models.ForeignKey(
+        EventoDecision, on_delete=models.CASCADE, related_name='nodos_auditoria',
+    )
+    nodo = models.ForeignKey(
+        'NodoArbol', on_delete=models.CASCADE, related_name='sesiones_auditoria',
+    )
+
+    class Meta:
+        verbose_name = 'Nodo en alcance de sesión'
+        verbose_name_plural = 'Nodos en alcance de sesión'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['evento', 'nodo'],
+                name='uniq_evento_nodo_auditoria',
+            ),
+        ]
+        ordering = ['nodo__orden_visual', 'nodo__nombre', 'id']
+
+    def __str__(self):
+        return f'{self.evento_id} · {self.nodo_id}'
+
+
+class EventoDecisionRegistro(models.Model):
+    """Cambio registrado automáticamente durante un evento activo."""
+
+    TIPO_PESO = 'peso'
+    TIPO_UTILIDAD = 'utilidad'
+    TIPO_ESTRUCTURA = 'estructura'
+    TIPO_MATRIZ = 'matriz'
+    TIPO_CONFIG_ESCENARIO = 'config_escenario'
+    TIPO_OTRO = 'otro'
+
+    TIPO_CAMBIO_CHOICES = [
+        (TIPO_PESO, 'Peso'),
+        (TIPO_UTILIDAD, 'Función de utilidad'),
+        (TIPO_ESTRUCTURA, 'Estructura del árbol'),
+        (TIPO_MATRIZ, 'Matriz de comparación'),
+        (TIPO_CONFIG_ESCENARIO, 'Configuración por escenario'),
+        (TIPO_OTRO, 'Otro'),
+    ]
+
+    evento = models.ForeignKey(
+        EventoDecision, on_delete=models.CASCADE, related_name='registros',
+    )
+    proyecto = models.ForeignKey(
+        Proyecto, on_delete=models.CASCADE, related_name='registros_auditoria',
+    )
+    omoe = models.ForeignKey(
+        Omoe, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='registros_auditoria',
+    )
+    escenario_id = models.IntegerField(null=True, blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='registros_auditoria',
+    )
+    tipo_cambio = models.CharField(max_length=24, choices=TIPO_CAMBIO_CHOICES)
+    entidad_tipo = models.CharField(max_length=64)
+    entidad_id = models.IntegerField(null=True, blank=True)
+    entidad_nombre = models.CharField(max_length=255, blank=True)
+    campo = models.CharField(max_length=64, blank=True)
+    valor_anterior = models.JSONField(null=True, blank=True)
+    valor_nuevo = models.JSONField(null=True, blank=True)
+    notas = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Registro de auditoría'
+        verbose_name_plural = 'Registros de auditoría'
+        ordering = ['-fecha_creacion', '-id']
+
+    def __str__(self):
+        return f'{self.evento_id} · {self.tipo_cambio} · {self.entidad_nombre}'

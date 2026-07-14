@@ -1,4 +1,10 @@
 import { validatePesosDimensionesPercent } from '../../utils/pesoUtils';
+import {
+  DEFAULT_PARETO_EPSILON_DISPLAY,
+  formatParetoEpsilonForInput,
+  parseParetoEpsilonInput,
+  PARETO_EPSILON_VALIDATION_MSG,
+} from './paretoEpsilonUtils';
 
 export const WIZARD_STEPS = [
   {
@@ -8,8 +14,8 @@ export const WIZARD_STEPS = [
   },
   {
     id: 'direcciones',
-    title: 'MIN / MAX',
-    subtitle: 'Si en cada dimensión mayor o menor es mejor (requerido para Pareto)',
+    title: 'Dimensiones y MIN / MAX',
+    subtitle: 'Seleccione qué dimensiones entran al cálculo y si mayor o menor es mejor',
   },
   {
     id: 'pareto',
@@ -19,7 +25,7 @@ export const WIZARD_STEPS = [
   {
     id: 'normalizacion',
     title: 'Normalización',
-    subtitle: 'Qué dimensiones escalar y con qué método',
+    subtitle: 'Método para escalar las dimensiones elegidas (por defecto: vectorial direccional)',
   },
   {
     id: 'pesos',
@@ -29,7 +35,7 @@ export const WIZARD_STEPS = [
   {
     id: 'madm',
     title: 'Ranking',
-    subtitle: 'Método MADM final',
+    subtitle: 'Método MADM final (por defecto: TOPSIS)',
   },
   {
     id: 'resumen',
@@ -48,8 +54,17 @@ export const WIZARD_PIPELINE_FOCUS = {
   resumen: null,
 };
 
-export function buildPreviewPayload(calcConfig, dimCount = 0) {
+export function dimensionesSeleccionadas(allDimensiones = [], config = null) {
+  const names = config?.dimensiones_normalizar || [];
+  if (!names.length) return [];
+  const set = new Set(names);
+  return (allDimensiones || []).filter((d) => set.has(d.nombre));
+}
+
+export function buildPreviewPayload(calcConfig, allDimensiones = []) {
   if (!calcConfig) return null;
+
+  const activas = dimensionesSeleccionadas(allDimensiones, calcConfig);
 
   const payload = {
     direcciones: calcConfig.direcciones || {},
@@ -58,6 +73,10 @@ export function buildPreviewPayload(calcConfig, dimCount = 0) {
 
   if (calcConfig.aplicar_pareto !== null && calcConfig.aplicar_pareto !== undefined) {
     payload.aplicar_pareto = calcConfig.aplicar_pareto;
+  }
+  const epsilonCheck = parseParetoEpsilonInput(calcConfig.pareto_epsilon);
+  if (epsilonCheck.ok) {
+    payload.pareto_epsilon = epsilonCheck.value;
   }
   if (calcConfig.normalizacion_metodo) {
     payload.normalizacion_metodo = calcConfig.normalizacion_metodo;
@@ -69,8 +88,9 @@ export function buildPreviewPayload(calcConfig, dimCount = 0) {
     payload.metodo_madm = calcConfig.metodo_madm;
   }
   if (calcConfig.metodo_pesos === 'user_defined_weights') {
-    payload.pesos_usuario = Array.from({ length: dimCount }, (_, idx) => {
-      const raw = (calcConfig.pesos_usuario || [])[idx];
+    payload.pesos_usuario = activas.map((dim) => {
+      const idx = (allDimensiones || []).findIndex((d) => d.omoe_id === dim.omoe_id);
+      const raw = idx >= 0 ? (calcConfig.pesos_usuario || [])[idx] : '';
       if (raw === '' || raw == null) return 0;
       const n = Number(String(raw).replace(',', '.'));
       return Number.isNaN(n) ? 0 : n;
@@ -80,7 +100,7 @@ export function buildPreviewPayload(calcConfig, dimCount = 0) {
   return payload;
 }
 
-export function createEmptyCalcConfig(dimensiones = []) {
+export function createEmptyCalcConfig(dimensiones = [], defaults = {}) {
   const dirs = {};
   dimensiones.forEach((d) => {
     dirs[d.omoe_id] = d.direction || 'max';
@@ -88,18 +108,20 @@ export function createEmptyCalcConfig(dimensiones = []) {
   return {
     nombre_calculo: '',
     solo_matriz: false,
-    aplicar_pareto: null,
-    normalizacion_metodo: '',
-    dimensiones_normalizar: dimensiones.map((d) => d.nombre),
+    aplicar_pareto: defaults.aplicar_pareto ?? null,
+    pareto_epsilon: formatParetoEpsilonForInput(defaults.pareto_epsilon),
+    normalizacion_metodo: defaults.normalizacion_metodo || 'directional_vector',
+    dimensiones_normalizar: defaults.dimensiones_normalizar || dimensiones.map((d) => d.nombre),
     direcciones: dirs,
-    metodo_pesos: '',
-    metodo_madm: '',
+    metodo_pesos: defaults.metodo_pesos || 'equal_weights',
+    metodo_madm: defaults.metodo_madm || 'topsis',
     pesos_usuario: dimensiones.map(() => ''),
   };
 }
 
 export function validateWizardStep(stepId, config, opcionesMeta) {
-  const dimCount = opcionesMeta?.dimensiones?.length || 0;
+  const allDimensiones = opcionesMeta?.dimensiones || [];
+  const activas = dimensionesSeleccionadas(allDimensiones, config);
 
   switch (stepId) {
     case 'nombre':
@@ -109,8 +131,10 @@ export function validateWizardStep(stepId, config, opcionesMeta) {
       return { ok: true };
 
     case 'direcciones': {
-      const dims = opcionesMeta?.dimensiones || [];
-      for (const d of dims) {
+      if (!activas.length) {
+        return { ok: false, message: 'Seleccione al menos una dimensión para el cálculo.' };
+      }
+      for (const d of activas) {
         const dir = config.direcciones?.[d.omoe_id] ?? config.direcciones?.[String(d.omoe_id)];
         if (!dir) {
           return { ok: false, message: `Defina MIN/MAX para la dimensión «${d.nombre}».` };
@@ -123,11 +147,17 @@ export function validateWizardStep(stepId, config, opcionesMeta) {
       if (config?.aplicar_pareto === null || config?.aplicar_pareto === undefined) {
         return { ok: false, message: 'Seleccione si desea aplicar el filtro Pareto.' };
       }
+      {
+        const eps = parseParetoEpsilonInput(config?.pareto_epsilon);
+        if (!eps.ok) {
+          return { ok: false, message: eps.message || PARETO_EPSILON_VALIDATION_MSG };
+        }
+      }
       return { ok: true };
 
     case 'normalizacion':
-      if (!config?.dimensiones_normalizar?.length) {
-        return { ok: false, message: 'Seleccione al menos una dimensión para normalizar.' };
+      if (!activas.length) {
+        return { ok: false, message: 'Seleccione al menos una dimensión para el cálculo.' };
       }
       if (!config?.normalizacion_metodo) {
         return { ok: false, message: 'Seleccione un método de normalización.' };
@@ -135,9 +165,8 @@ export function validateWizardStep(stepId, config, opcionesMeta) {
       return { ok: true };
 
     case 'dimensiones':
-      // legacy id — misma validación que normalización (dims)
-      if (!config?.dimensiones_normalizar?.length) {
-        return { ok: false, message: 'Seleccione al menos una dimensión para normalizar.' };
+      if (!activas.length) {
+        return { ok: false, message: 'Seleccione al menos una dimensión para el cálculo.' };
       }
       return { ok: true };
 
@@ -146,7 +175,11 @@ export function validateWizardStep(stepId, config, opcionesMeta) {
         return { ok: false, message: 'Seleccione un método de cálculo de pesos.' };
       }
       if (config.metodo_pesos === 'user_defined_weights') {
-        const check = validatePesosDimensionesPercent(config.pesos_usuario, dimCount);
+        const pesosActivos = activas.map((dim) => {
+          const idx = allDimensiones.findIndex((d) => d.omoe_id === dim.omoe_id);
+          return idx >= 0 ? (config.pesos_usuario || [])[idx] : '';
+        });
+        const check = validatePesosDimensionesPercent(pesosActivos, activas.length);
         if (!check.ok) {
           return { ok: false, message: check.message || 'Los pesos deben sumar 100 %.' };
         }
@@ -173,6 +206,7 @@ export function validateWizardStep(stepId, config, opcionesMeta) {
 
 export function buildConfigSummary(config, opcionesMeta) {
   const dimensiones = opcionesMeta?.dimensiones || [];
+  const activas = dimensionesSeleccionadas(dimensiones, config);
   const normLabel = opcionesMeta?.normalization_methods?.find(
     (m) => m.value === config.normalizacion_metodo,
   )?.label;
@@ -188,8 +222,8 @@ export function buildConfigSummary(config, opcionesMeta) {
     {
       label: 'Direcciones MIN/MAX',
       value:
-        dimensiones.length > 0
-          ? dimensiones
+        activas.length > 0
+          ? activas
               .map((d) => {
                 const dir =
                   config.direcciones?.[d.omoe_id] ??
@@ -211,10 +245,17 @@ export function buildConfigSummary(config, opcionesMeta) {
             : 'No — todas las alternativas',
     },
     {
-      label: 'Dimensiones a normalizar',
+      label: 'Epsilon Pareto',
+      value: (() => {
+        const eps = parseParetoEpsilonInput(config.pareto_epsilon);
+        return eps.ok ? String(eps.value) : '—';
+      })(),
+    },
+    {
+      label: 'Dimensiones en el cálculo',
       value:
-        config.dimensiones_normalizar?.length > 0
-          ? config.dimensiones_normalizar.join(', ')
+        activas.length > 0
+          ? activas.map((d) => d.nombre).join(', ')
           : '—',
     },
     { label: 'Método normalización', value: normLabel || config.normalizacion_metodo || '—' },

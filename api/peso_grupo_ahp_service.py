@@ -172,12 +172,23 @@ def build_grupo_payload(escenario: Escenario, parent_id: int | None) -> dict[str
 
 
 @transaction.atomic
-def save_grupo_config(escenario: Escenario, parent_id: int | None, data: dict[str, Any]) -> dict[str, Any]:
+def save_grupo_config(
+    escenario: Escenario,
+    parent_id: int | None,
+    data: dict[str, Any],
+    *,
+    usuario=None,
+) -> dict[str, Any]:
     payload_preview = build_grupo_payload(escenario, parent_id)
     if not payload_preview['ahp_disponible'] and data.get('modo') == PesoGrupoAhp.MODO_AHP:
         raise ValidationError('Se necesitan al menos dos hermanos activos para usar AHP.')
 
     grupo = get_or_create_grupo(escenario, parent_id)
+    antes = {
+        'modo': grupo.modo,
+        'juicios': dict(grupo.juicios or {}),
+        'consistency_ratio': float(grupo.consistency_ratio) if grupo.consistency_ratio else None,
+    }
     modo = (data.get('modo') or grupo.modo or PesoGrupoAhp.MODO_MANUAL).strip()
     if modo not in (PesoGrupoAhp.MODO_MANUAL, PesoGrupoAhp.MODO_AHP):
         raise ValidationError('Modo inválido. Use «manual» o «ahp».')
@@ -199,8 +210,117 @@ def save_grupo_config(escenario: Escenario, parent_id: int | None, data: dict[st
     grupo.pesos_calculados = {str(p['nodo_id']): p['peso'] for p in ahp['pesos']}
     grupo.save()
 
+    if usuario:
+        from .evento_decision_service import (
+            _meta_accion,
+            _meta_efecto,
+            nuevo_lote_auditoria,
+            registrar_cambio,
+        )
+        from .models import EventoDecisionRegistro
+
+        parent_nombre = _parent_nombre(escenario, parent_id)
+        lote_id = nuevo_lote_auditoria()
+        despues = {
+            'modo': grupo.modo,
+            'juicios': dict(grupo.juicios or {}),
+            'consistency_ratio': float(grupo.consistency_ratio) if grupo.consistency_ratio else None,
+        }
+        juicios_changed = antes.get('juicios') != despues['juicios']
+        modo_changed = antes.get('modo') != despues['modo']
+        cr_changed = antes.get('consistency_ratio') != despues['consistency_ratio']
+
+        # Acción principal = lo que el usuario cambió (juicios o modo).
+        if juicios_changed:
+            registrar_cambio(
+                escenario.proyecto_id,
+                usuario,
+                tipo_cambio=EventoDecisionRegistro.TIPO_MATRIZ,
+                entidad_tipo='peso_grupo_ahp',
+                entidad_id=grupo.id,
+                entidad_nombre=parent_nombre,
+                campo='juicios',
+                valor_anterior=antes.get('juicios'),
+                valor_nuevo=despues['juicios'],
+                omoe_id=escenario.omoe_id,
+                escenario_id=escenario.id,
+                notas='Actualización de comparaciones AHP',
+                metadata=_meta_accion(
+                    lote_id,
+                    f'Comparaciones AHP en «{parent_nombre}»',
+                    parent_id=parent_id,
+                ),
+            )
+        elif modo_changed:
+            registrar_cambio(
+                escenario.proyecto_id,
+                usuario,
+                tipo_cambio=EventoDecisionRegistro.TIPO_MATRIZ,
+                entidad_tipo='peso_grupo_ahp',
+                entidad_id=grupo.id,
+                entidad_nombre=parent_nombre,
+                campo='modo',
+                valor_anterior=antes.get('modo'),
+                valor_nuevo=despues['modo'],
+                omoe_id=escenario.omoe_id,
+                escenario_id=escenario.id,
+                notas='Cambio de modo de pesos del grupo',
+                metadata=_meta_accion(
+                    lote_id,
+                    f'Modo de pesos «{parent_nombre}» → {despues["modo"]}',
+                    parent_id=parent_id,
+                ),
+            )
+        elif cr_changed and not (modo == PesoGrupoAhp.MODO_AHP and data.get('aplicar')):
+            # Solo CR sin juicios/modo (raro): tratar CR como acción.
+            registrar_cambio(
+                escenario.proyecto_id,
+                usuario,
+                tipo_cambio=EventoDecisionRegistro.TIPO_MATRIZ,
+                entidad_tipo='peso_grupo_ahp',
+                entidad_id=grupo.id,
+                entidad_nombre=parent_nombre,
+                campo='consistency_ratio',
+                valor_anterior=antes.get('consistency_ratio'),
+                valor_nuevo=despues['consistency_ratio'],
+                omoe_id=escenario.omoe_id,
+                escenario_id=escenario.id,
+                metadata=_meta_accion(
+                    lote_id,
+                    f'Consistencia AHP en «{parent_nombre}»',
+                    parent_id=parent_id,
+                ),
+            )
+
+        if cr_changed and (juicios_changed or modo_changed):
+            registrar_cambio(
+                escenario.proyecto_id,
+                usuario,
+                tipo_cambio=EventoDecisionRegistro.TIPO_MATRIZ,
+                entidad_tipo='peso_grupo_ahp',
+                entidad_id=grupo.id,
+                entidad_nombre=parent_nombre,
+                campo='consistency_ratio',
+                valor_anterior=antes.get('consistency_ratio'),
+                valor_nuevo=despues['consistency_ratio'],
+                omoe_id=escenario.omoe_id,
+                escenario_id=escenario.id,
+                notas='Efecto: razón de consistencia recalculada',
+                metadata=_meta_efecto(lote_id, parent_id=parent_id),
+            )
+
+        if modo == PesoGrupoAhp.MODO_AHP and data.get('aplicar'):
+            apply_grupo_pesos(
+                escenario,
+                parent_id,
+                grupo=grupo,
+                usuario=usuario,
+                lote_id=lote_id if (juicios_changed or modo_changed or cr_changed) else None,
+            )
+            return build_grupo_payload(escenario, parent_id)
+
     if modo == PesoGrupoAhp.MODO_AHP and data.get('aplicar'):
-        apply_grupo_pesos(escenario, parent_id, grupo=grupo)
+        apply_grupo_pesos(escenario, parent_id, grupo=grupo, usuario=usuario)
 
     return build_grupo_payload(escenario, parent_id)
 
@@ -211,6 +331,8 @@ def apply_grupo_pesos(
     parent_id: int | None,
     *,
     grupo: PesoGrupoAhp | None = None,
+    usuario=None,
+    lote_id: str | None = None,
 ) -> dict[str, Any]:
     payload = build_grupo_payload(escenario, parent_id)
     if not payload['ahp_disponible']:
@@ -231,11 +353,69 @@ def apply_grupo_pesos(
             'pesos calculados.'
         )
 
+    from .evento_decision_service import (
+        _meta_accion,
+        _meta_efecto,
+        nuevo_lote_auditoria,
+        registrar_cambio,
+    )
+    from .models import EventoDecisionRegistro, NodoArbol
+
     pesos_map = {p['nodo_id']: p['peso'] for p in ahp['pesos']}
+    parent_nombre = _parent_nombre(escenario, parent_id)
+    lote = lote_id or nuevo_lote_auditoria()
+    crear_accion_aplicar = lote_id is None and usuario is not None
+
+    if crear_accion_aplicar:
+        registrar_cambio(
+            escenario.proyecto_id,
+            usuario,
+            tipo_cambio=EventoDecisionRegistro.TIPO_MATRIZ,
+            entidad_tipo='peso_grupo_ahp',
+            entidad_id=grupo.id,
+            entidad_nombre=parent_nombre,
+            campo='aplicar_pesos',
+            valor_anterior=None,
+            valor_nuevo={str(k): v for k, v in pesos_map.items()},
+            omoe_id=escenario.omoe_id,
+            escenario_id=escenario.id,
+            notas='Aplicación de pesos desde matriz AHP',
+            metadata=_meta_accion(
+                lote,
+                f'Aplicar pesos AHP en «{parent_nombre}»',
+                parent_id=parent_id,
+            ),
+        )
+
     for nid, peso in pesos_map.items():
+        cfg = NodoArbolEscenario.objects.filter(
+            escenario=escenario, nodo_arbol_id=nid,
+        ).first()
+        peso_anterior = float(cfg.peso or 0) if cfg else None
         NodoArbolEscenario.objects.filter(
             escenario=escenario, nodo_arbol_id=nid,
         ).update(peso=_q2(Decimal(str(peso))))
+        if usuario and peso_anterior != peso:
+            nodo = NodoArbol.objects.filter(pk=nid).first()
+            registrar_cambio(
+                escenario.proyecto_id,
+                usuario,
+                tipo_cambio=EventoDecisionRegistro.TIPO_PESO,
+                entidad_tipo='nodo_arbol',
+                entidad_id=nid,
+                entidad_nombre=nodo.nombre if nodo else f'Nodo #{nid}',
+                campo='peso',
+                valor_anterior=peso_anterior,
+                valor_nuevo=peso,
+                omoe_id=escenario.omoe_id,
+                escenario_id=escenario.id,
+                notas='Efecto: peso recalculado desde matriz AHP',
+                metadata=_meta_efecto(
+                    lote,
+                    parent_id=parent_id,
+                    grupo=parent_nombre,
+                ),
+            )
 
     grupo.consistency_ratio = Decimal(str(ahp['consistency_ratio']))
     grupo.lambda_max = Decimal(str(ahp['lambda_max'])) if ahp['lambda_max'] is not None else None

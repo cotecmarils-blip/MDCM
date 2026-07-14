@@ -6,6 +6,7 @@ import {
   DEFAULT_CALCULATION_CONFIG,
   PRIMARY_CALCULATION_METHODS,
 } from './calculationMethodConstants';
+import { usesEscenarioPesos } from './escenarioAgregacionConstants';
 
 const STATUS_STYLES = {
   recommended: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
@@ -48,7 +49,7 @@ function MethodCard({ card, selected, onSelect, disabled }) {
   );
 }
 
-function MAUTEscenariosInfo({ omoeId }) {
+function MAUTEscenariosInfo({ omoeId, showPesos = true }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -86,8 +87,10 @@ function MAUTEscenariosInfo({ omoeId }) {
       <p className="text-xs text-gray-600 dark:text-gray-400">
         MAUT usa únicamente los escenarios <strong>de esta dimensión</strong> (módulo{' '}
         <strong>Definición de escenarios</strong>) y los valores en{' '}
-        <strong>Evaluación</strong>. El peso de cada escenario actúa como probabilidad
-        (se normaliza al calcular si no suman 100 %).
+        <strong>Evaluación</strong>.
+        {showPesos
+          ? ' El peso de cada escenario actúa como probabilidad (se normaliza al calcular si no suman 100 %).'
+          : ' En esta dimensión no se usan pesos entre escenarios (mínimo-mejor / máximo-mejor).'}
       </p>
       {!omoeId && (
         <p className="text-xs text-amber-700 dark:text-amber-400">
@@ -110,12 +113,14 @@ function MAUTEscenariosInfo({ omoeId }) {
               className="flex justify-between gap-2 rounded-md bg-white/70 dark:bg-navy-900/40 px-2 py-1.5"
             >
               <span className="font-medium text-gray-800 dark:text-gray-200">{esc.nombre}</span>
-              <span className="text-gray-500">Peso {Number(esc.peso || 0).toFixed(2)} %</span>
+              {showPesos && (
+                <span className="text-gray-500">Peso {Number(esc.peso || 0).toFixed(2)} %</span>
+              )}
             </li>
           ))}
         </ul>
       )}
-      {rows.length > 1 && (
+      {showPesos && rows.length > 1 && (
         <p className="text-xs text-gray-500">
           Suma de pesos: {totalPeso.toFixed(2)} %
           {Math.abs(totalPeso - 100) > 0.05 ? ' (se normalizarán al calcular)' : ''}
@@ -289,7 +294,9 @@ function CalculationMethodSelector({
   inputClass = '',
   omoeId = null,
   proyectoId = null,
+  escenarioAgregacion = null,
 }) {
+  const showEscenarioPesos = usesEscenarioPesos(escenarioAgregacion);
   const handleMethodSelect = (methodId) => {
     onChange({
       calculation_method: methodId,
@@ -305,13 +312,13 @@ function CalculationMethodSelector({
   };
 
   return (
-    <section className="space-y-4 rounded-xl border-2 border-navy-500/20 p-4 bg-white/50 dark:bg-navy-900/20">
+    <section className="space-y-3">
       <div>
-        <h4 className="text-sm font-bold text-navy-700 dark:text-navy-300">
+        <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
           Método de cálculo de la dimensión
         </h4>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-          Seleccione un método principal. Solo uno puede estar activo por dimensión.
+          Por defecto se usa MAVT jerárquico. Cambie solo si el proyecto requiere otro método.
         </p>
       </div>
 
@@ -328,7 +335,7 @@ function CalculationMethodSelector({
       </div>
 
       {calculationMethod === CALC_METHOD_MAUT && (
-        <MAUTEscenariosInfo omoeId={omoeId} />
+        <MAUTEscenariosInfo omoeId={omoeId} showPesos={showEscenarioPesos} />
       )}
       {calculationMethod === CALC_METHOD_UTA && (
         <UTAConfig

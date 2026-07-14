@@ -1,5 +1,7 @@
 """Opciones expuestas al frontend para el pipeline MADM."""
 
+from .pareto_solver import DEFAULT_PARETO_EPSILON
+
 NORMALIZATION_METHODS = [
     {
         'value': 'directional_minmax',
@@ -63,11 +65,9 @@ MADM_METHODS = [
 
 
 def rama_to_direction(rama: str) -> str:
-    """OMOC/OMOR → minimizar; OMOE → maximizar."""
-    r = (rama or 'omoe').strip().lower()
-    if r in ('omoc', 'omor'):
-        return 'min'
-    return 'max'
+    """Sentido MADM según catálogo de tipos (fallback: omoc/omor → min)."""
+    from .tipo_dimension_service import sentido_optimizacion
+    return sentido_optimizacion(rama)
 
 
 def simulacion_opciones_payload(proyecto) -> dict:
@@ -92,7 +92,8 @@ def simulacion_opciones_payload(proyecto) -> dict:
         'madm_methods': MADM_METHODS,
         'defaults': {
             'aplicar_pareto': False,
-            'normalizacion_metodo': 'directional_minmax',
+            'pareto_epsilon': DEFAULT_PARETO_EPSILON,
+            'normalizacion_metodo': 'directional_vector',
             'dimensiones_normalizar': [d['nombre'] for d in dimensiones],
             'metodo_pesos': 'equal_weights',
             'metodo_madm': 'topsis',

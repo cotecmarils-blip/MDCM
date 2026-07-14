@@ -29,7 +29,9 @@ export function showUtilidadFields(level, item, formData = {}) {
   if (level === CRITERIO_LEVELS.NODO_ARBOL) {
     if (item?.hijos?.length) return false;
     if (!item) return Boolean(formData.es_nodo_evaluable);
-    return true;
+    if (item.tipo_criterio || item.familia_funciones) return true;
+    if (item.modo_evaluacion === 'incertidumbre') return true;
+    return Boolean(formData.es_nodo_evaluable);
   }
   return isTerminalCriterioNode(level, item);
 }

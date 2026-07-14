@@ -3,7 +3,7 @@ export const STORAGE_REFRESH = 'MCDM_refresh_token';
 export const STORAGE_USER = 'MCDM_user';
 export const STORAGE_AUTH_MESSAGE = 'MCDM_auth_message';
 
-export const ACCESS_DENIED_CODES = ['access_expired', 'access_disabled', 'no_access'];
+export const ACCESS_DENIED_CODES = ['access_expired', 'access_disabled', 'no_access', 'account_disabled'];
 
 export function isAccessDeniedResponse(response) {
   const code = response?.data?.code;

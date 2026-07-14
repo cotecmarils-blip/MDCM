@@ -148,7 +148,12 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+_media_root = os.environ.get('MEDIA_ROOT', '').strip()
+MEDIA_ROOT = Path(_media_root) if _media_root else BASE_DIR / 'media'
+
+# Railway / reverse proxy: URLs absolutas y esquema HTTPS correctos.
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",

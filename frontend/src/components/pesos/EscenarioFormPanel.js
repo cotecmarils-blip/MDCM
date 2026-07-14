@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { escenarios, omoeApi } from '../../api';
 import { RAMA_EVALUACION_SHORT } from '../criterios/ramaEvaluacionOptions';
+import {
+  getEscenarioPesosHint,
+  usesEscenarioPesos,
+} from '../criterios/escenarioAgregacionConstants';
 
 function EscenarioFormPanel({
   proyectoId,
@@ -30,6 +34,15 @@ function EscenarioFormPanel({
       .filter((e) => e.omoe === omoeId && (!escenarioId || e.id !== escenarioId))
       .reduce((sum, e) => sum + Number(e.peso || 0), 0);
   }, [formData.omoe, escenariosList, escenarioId]);
+
+  const selectedDimension = useMemo(
+    () => dimensiones.find((d) => String(d.id) === String(formData.omoe)),
+    [dimensiones, formData.omoe],
+  );
+
+  const escenarioAgregacion = selectedDimension?.escenario_agregacion;
+  const aplicaPesosEscenario = usesEscenarioPesos(escenarioAgregacion);
+  const pesosHint = getEscenarioPesosHint(escenarioAgregacion);
 
   useEffect(() => {
     const loadDimensiones = async () => {
@@ -112,7 +125,7 @@ function EscenarioFormPanel({
         omoe: Number(formData.omoe),
         proyecto: proyectoId,
       };
-      if (formData.peso !== '') {
+      if (formData.peso !== '' && aplicaPesosEscenario) {
         payload.peso = Number(formData.peso);
       }
       if (isNew) {
@@ -244,6 +257,13 @@ function EscenarioFormPanel({
         />
       </div>
 
+      {formData.omoe && !aplicaPesosEscenario && pesosHint && (
+        <div className="rounded-lg border border-blue-200/70 dark:border-blue-800/50 bg-blue-50/60 dark:bg-blue-900/15 px-3 py-2 text-xs text-blue-900 dark:text-blue-200">
+          {pesosHint}
+        </div>
+      )}
+
+      {aplicaPesosEscenario && (
       <div>
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Peso del escenario (%)
@@ -279,6 +299,7 @@ function EscenarioFormPanel({
           </p>
         )}
       </div>
+      )}
 
       <div>
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

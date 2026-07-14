@@ -38,3 +38,7 @@ def documento_upload(instance, filename):
 
 def documento_criterio_upload(instance, filename):
     return unique_upload_path('documentos_criterios', filename)
+
+
+def usuario_foto_upload(instance, filename):
+    return unique_upload_path('usuarios/fotos', filename, '.jpg')

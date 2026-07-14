@@ -419,6 +419,80 @@ def escenarios_for_dimension(omoe: Omoe) -> list[Escenario]:
     )
 
 
+def escenario_tiene_valores_en_terminales(
+    escenario: Escenario,
+    terminales: list[dict],
+    valores: dict[str, str],
+) -> bool:
+    """True si hay al menos un valor x no vacío en terminales para ese escenario."""
+    for t in terminales:
+        nodo_id = t.get('nodo_id')
+        if nodo_id is None:
+            continue
+        nivel = t.get('nivel') or 'nodo_arbol'
+        raw = valores.get(valor_key(nivel, nodo_id, escenario.id))
+        if str(raw or '').strip():
+            return True
+    return False
+
+
+def filter_escenarios_con_valores(
+    escenarios: list[Escenario],
+    terminales: list[dict],
+    valores: dict[str, str],
+) -> list[Escenario]:
+    """
+    Excluye escenarios sin datos de evaluación.
+    Si ninguno tiene datos, devuelve la lista original (evita quedarse sin escenarios).
+    """
+    if not escenarios or not terminales:
+        return list(escenarios)
+    con_datos = [
+        esc for esc in escenarios
+        if escenario_tiene_valores_en_terminales(esc, terminales, valores)
+    ]
+    return con_datos if con_datos else list(escenarios)
+
+
+def apply_valores_fallback_escenarios(
+    omoe: Omoe,
+    escenario: Escenario,
+    terminales: list[dict],
+    valores: dict[str, str],
+) -> tuple[dict[str, str], bool]:
+    """
+    Completa celdas vacías del escenario objetivo con valores de hermanos
+    (p. ej. Estandar vacío + datos en «Escenario base» del import oceanográfico).
+    """
+    sibling_ids = list(
+        Escenario.objects.filter(omoe=omoe)
+        .exclude(pk=escenario.pk)
+        .order_by('orden', 'id')
+        .values_list('id', flat=True)
+    )
+    if not sibling_ids:
+        return valores, False
+
+    patched = dict(valores)
+    used_fallback = False
+    for t in terminales:
+        nivel = t.get('nivel') or 'nodo_arbol'
+        nodo_id = t.get('nodo_id')
+        if nodo_id is None:
+            continue
+        key_target = valor_key(nivel, nodo_id, escenario.id)
+        if str(patched.get(key_target) or '').strip():
+            continue
+        for sid in sibling_ids:
+            key_src = valor_key(nivel, nodo_id, sid)
+            raw = patched.get(key_src)
+            if str(raw or '').strip():
+                patched[key_target] = raw
+                used_fallback = True
+                break
+    return patched, used_fallback
+
+
 def _columnas_for_dimension(terminales: list[dict], escenarios: list[Escenario]) -> list[dict]:
     from .nodo_escenario_service import load_config_map, seed_arbol_config_for_escenario
 
@@ -447,6 +521,8 @@ def _columnas_for_dimension(terminales: list[dict], escenarios: list[Escenario])
                 'unidad': merged.get('unidad') or '',
                 'constantes': merged.get('constantes') or {},
                 'familia_funciones': merged.get('familia_funciones') or '',
+                'tipo_criterio': merged.get('tipo_mop') or '',
+                'tipo_dato': merged.get('tipo_dato') or '',
                 'branch': merged.get('branch'),
                 'modo_evaluacion': merged.get('modo_evaluacion') or 'certeza',
                 'prob_options': merged.get('prob_options') or [],
@@ -480,6 +556,8 @@ def build_evaluacion_schema(proyecto: Proyecto) -> dict[str, Any]:
             'omoe_id': omoe.id,
             'omoe_nombre': omoe.nombre_modelo or omoe.codigo or f'Dimensión #{omoe.pk}',
             'rama_evaluacion': getattr(omoe, 'rama_evaluacion', None) or RAMA_OMOE,
+            'escenario_agregacion': getattr(omoe, 'escenario_agregacion', None) or 'compensatorio',
+            'modo_valor_terminal': getattr(omoe, 'modo_valor_terminal', None) or 'utilidad',
             'escenarios': esc_payload,
             'terminales': terminales,
             'columnas': columnas,

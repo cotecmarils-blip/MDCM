@@ -16,10 +16,74 @@ User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
+    foto = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'last_name', 'email']
+        fields = ['id', 'username', 'first_name', 'last_name', 'email', 'foto']
         read_only_fields = fields
+
+    def get_foto(self, obj):
+        profile = getattr(obj, 'profile', None)
+        if profile is None:
+            profile = getattr(obj, '_cached_profile', None)
+        if profile is None:
+            from .models import UserProfile
+            profile = UserProfile.objects.filter(user=obj).first()
+        if profile and profile.foto:
+            return profile.foto.url
+        return None
+
+
+class UserProfileUpdateSerializer(serializers.Serializer):
+    username = serializers.CharField(required=False, max_length=150)
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True, max_length=254)
+    foto = serializers.ImageField(required=False, allow_null=True)
+    quitar_foto = serializers.BooleanField(required=False, default=False)
+
+    def validate_username(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('El nombre de usuario no puede estar vacío.')
+        user = self.context['user']
+        if User.objects.filter(username__iexact=value).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError('Ya existe un usuario con ese nombre.')
+        return value
+
+    def validate_email(self, value):
+        email = (value or '').strip()
+        user = self.context['user']
+        if email and User.objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError('Ya existe un usuario con ese correo.')
+        return email
+
+    def update(self, instance, validated_data):
+        from .user_profile import get_or_create_user_profile
+
+        user = instance
+        profile = get_or_create_user_profile(user)
+
+        quitar_foto = validated_data.pop('quitar_foto', False)
+        foto = validated_data.pop('foto', serializers.empty)
+
+        for field in ('username', 'first_name', 'last_name', 'email'):
+            if field in validated_data:
+                setattr(user, field, validated_data[field])
+        user.save()
+
+        if quitar_foto and profile.foto:
+            profile.foto.delete(save=False)
+            profile.foto = None
+            profile.save(update_fields=['foto', 'fecha_actualizacion'])
+        elif foto is not serializers.empty and foto is not None:
+            if profile.foto:
+                profile.foto.delete(save=False)
+            profile.foto = foto
+            profile.save(update_fields=['foto', 'fecha_actualizacion'])
+
+        return user
 
 
 class LoginSerializer(serializers.Serializer):
@@ -54,6 +118,8 @@ class OfertanteAlternativaSerializer(serializers.ModelSerializer):
 
 class ProyectoMembershipSerializer(serializers.ModelSerializer):
     usuario = UserSerializer(read_only=True)
+    usuario_id = serializers.IntegerField(write_only=True, required=False)
+    proyecto_nombre = serializers.CharField(source='proyecto.nombre', read_only=True)
     username = serializers.CharField(write_only=True, required=False)
     email = serializers.EmailField(write_only=True, required=False, allow_blank=True)
     password = serializers.CharField(
@@ -116,7 +182,9 @@ class ProyectoMembershipSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'proyecto',
+            'proyecto_nombre',
             'usuario',
+            'usuario_id',
             'username',
             'email',
             'password',
@@ -182,6 +250,7 @@ class ProyectoMembershipSerializer(serializers.ModelSerializer):
         alternativa_ids = attrs.get('alternativa_ids', [])
         proyecto = attrs.get('proyecto') or getattr(self.instance, 'proyecto', None)
         username = attrs.pop('username', None)
+        usuario_id = attrs.pop('usuario_id', None)
         email_raw = attrs.pop('email', None)
         password = attrs.pop('password', None)
         first_name_raw = attrs.pop('first_name', None)
@@ -222,12 +291,23 @@ class ProyectoMembershipSerializer(serializers.ModelSerializer):
                 update_fields['password'] = password
             if update_fields:
                 self._pending_user_update = update_fields
-        elif username and not attrs.get('usuario'):
-            if User.objects.filter(username=username).exists():
+        elif usuario_id and not self.instance:
+            try:
+                attrs['usuario'] = User.objects.get(pk=int(usuario_id))
+            except (User.DoesNotExist, TypeError, ValueError):
                 raise serializers.ValidationError(
-                    {'username': 'Ya existe un usuario con ese nombre de usuario.'}
+                    {'usuario_id': 'Usuario no encontrado.'}
                 )
-            if not self.instance:
+        elif username and not attrs.get('usuario') and not self.instance:
+            username = username.strip()
+            if not username:
+                raise serializers.ValidationError(
+                    {'username': 'El nombre de usuario no puede estar vacío.'}
+                )
+            existing = User.objects.filter(username__iexact=username).first()
+            if existing:
+                attrs['usuario'] = existing
+            else:
                 if not password:
                     raise serializers.ValidationError(
                         {
@@ -255,9 +335,19 @@ class ProyectoMembershipSerializer(serializers.ModelSerializer):
                     'last_name': last_name,
                 }
 
+        if not self.instance and attrs.get('usuario') and proyecto:
+            dup = ProyectoMembership.objects.filter(
+                usuario=attrs['usuario'],
+                proyecto=proyecto,
+            )
+            if dup.exists():
+                raise serializers.ValidationError(
+                    {'usuario_id': 'Este usuario ya está asignado a este proyecto.'}
+                )
+
         if not self.instance and not attrs.get('usuario') and not self._pending_user:
             raise serializers.ValidationError(
-                {'username': 'Indique el nombre de usuario o cree un usuario nuevo.'}
+                {'username': 'Indique el nombre de usuario o seleccione un usuario existente.'}
             )
 
         if rol == ProyectoMembership.ROL_EVALUADOR and mision_ids and proyecto:

@@ -1,7 +1,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useTheme } from '../ThemeContext';
 import ThemeToggle from '../components/ThemeToggle';
-import { useAuth } from '../context/AuthContext';
+import UserMenu from '../components/UserMenu';
 
 function Header({
   sidebarOpen,
@@ -12,7 +13,7 @@ function Header({
   rolLabel,
   canEditProject = true,
 }) {
-  const { user, logout } = useAuth();
+  const { isDark } = useTheme();
   return (
     <header className="sticky top-0 before:absolute before:inset-0 before:backdrop-blur-md max-lg:before:bg-white/90 dark:max-lg:before:bg-navy-900/90 before:-z-10 z-30 max-lg:shadow-xs lg:before:bg-navy-50/90 dark:lg:before:bg-navy-950/90">
       <div className="px-4 sm:px-6 lg:px-8">
@@ -52,11 +53,7 @@ function Header({
                 {rolLabel}
               </span>
             )}
-            {user && (
-              <span className="hidden md:inline text-sm text-gray-600 dark:text-gray-300">
-                {user.first_name || user.username}
-              </span>
-            )}
+            <UserMenu isDark={isDark} />
             {onEditProject && canEditProject && (
               <button
                 onClick={onEditProject}
@@ -69,13 +66,6 @@ function Header({
                 Editar
               </button>
             )}
-            <button
-              type="button"
-              onClick={logout}
-              className="px-3 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-navy-800 rounded-lg"
-            >
-              Salir
-            </button>
             <ThemeToggle />
           </div>
         </div>

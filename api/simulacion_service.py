@@ -404,30 +404,36 @@ def validar_simulacion(proyecto: Proyecto) -> dict[str, Any]:
 
     for omoe in Omoe.objects.filter(proyecto=proyecto).order_by('orden', 'id'):
         omoe_nombre = omoe.nombre_modelo or omoe.codigo or f'Dimensión #{omoe.pk}'
+        es_valor_bruto = (
+            getattr(omoe, 'modo_valor_terminal', None) or 'utilidad'
+        ) == 'valor_bruto'
         nodos_qs = NodoArbol.objects.filter(omoe=omoe, aplica=True)
         if nodos_qs.exists():
-            parent_ids = set(nodos_qs.values_list('parent_id', flat=True))
-            for parent_id in parent_ids:
-                grupo_key = (omoe.id, parent_id)
-                if grupo_key in vistos_grupos_peso:
-                    continue
-                vistos_grupos_peso.add(grupo_key)
-                try:
-                    validate_sibling_pesos_nodo(omoe.id, parent_id)
-                except ValidationError as exc:
-                    msg = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
-                    faltantes.append(_faltante(
-                        'peso',
-                        msg,
-                        dimension=omoe_nombre,
-                        modulo='Árbol de dimensiones',
-                    ))
+            if not es_valor_bruto:
+                parent_ids = set(nodos_qs.values_list('parent_id', flat=True))
+                for parent_id in parent_ids:
+                    grupo_key = (omoe.id, parent_id)
+                    if grupo_key in vistos_grupos_peso:
+                        continue
+                    vistos_grupos_peso.add(grupo_key)
+                    try:
+                        validate_sibling_pesos_nodo(omoe.id, parent_id)
+                    except ValidationError as exc:
+                        msg = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+                        faltantes.append(_faltante(
+                            'peso',
+                            msg,
+                            dimension=omoe_nombre,
+                            modulo='Árbol de dimensiones',
+                        ))
         else:
-            _validar_pesos_legacy_omoe(omoe, omoe_nombre, faltantes, vistos_grupos_peso)
+            if not es_valor_bruto:
+                _validar_pesos_legacy_omoe(omoe, omoe_nombre, faltantes, vistos_grupos_peso)
 
     for dim in schema.get('dimensiones', []):
         omoe_nombre = dim['omoe_nombre']
         omoe_id = dim['omoe_id']
+        es_valor_bruto = (dim.get('modo_valor_terminal') or 'utilidad') == 'valor_bruto'
 
         try:
             validate_escenarios_peso_omoe(omoe_id)
@@ -452,6 +458,9 @@ def validar_simulacion(proyecto: Proyecto) -> dict[str, Any]:
                     nombre=nombre_col,
                     escenario=col.get('escenario_nombre') or col.get('escenario_label'),
                 ))
+                continue
+            if es_valor_bruto:
+                # Costos: no exigir familia/parámetros de utilidad.
                 continue
             fields_override = {
                 'nombre': nombre_col,
@@ -510,6 +519,67 @@ def _round6(val) -> float:
         return 0.0
 
 
+def _dim_calc_context(omoe: Omoe) -> dict[str, str]:
+    return {
+        'escenario_agregacion': getattr(omoe, 'escenario_agregacion', None) or 'compensatorio',
+        'modo_valor_terminal': getattr(omoe, 'modo_valor_terminal', None) or 'utilidad',
+        'rama_evaluacion': getattr(omoe, 'rama_evaluacion', None) or 'omoe',
+    }
+
+
+def _coerce_terminal_value(raw, util_fn: dict, *, es_riesgo: bool, valor_bruto: bool):
+    if es_riesgo:
+        return riesgo_producto(raw)
+    if valor_bruto:
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+    from .pydecision_bridge import evaluate_utility
+    return evaluate_utility(raw, util_fn)
+
+
+def _aggregate_escenario_values(
+    esc_rows: list[dict],
+    pairs: list[tuple[float, float]],
+    agregacion: str,
+    *,
+    dim_ctx: dict[str, str] | None = None,
+) -> tuple[float | None, str, dict | None]:
+    from .escenario_agregacion_choices import (
+        ESCENARIO_AGREG_INDEPENDIENTE,
+        ESCENARIO_AGREG_MAXIMO_MEJOR,
+        ESCENARIO_AGREG_MINIMO_MEJOR,
+        ESCENARIO_AGREG_PEOR_CASO,
+        peor_caso_selecciona_maximo,
+    )
+
+    if not esc_rows:
+        return None, 'Sin escenarios', None
+    if agregacion == ESCENARIO_AGREG_MINIMO_MEJOR:
+        best = min(esc_rows, key=lambda r: float(r['u']))
+        return float(best['u']), f'mín(u) → «{best["nombre"]}»', best
+    if agregacion == ESCENARIO_AGREG_MAXIMO_MEJOR:
+        best = max(esc_rows, key=lambda r: float(r['u']))
+        return float(best['u']), f'máx(u) → «{best["nombre"]}»', best
+    if agregacion == ESCENARIO_AGREG_PEOR_CASO:
+        if peor_caso_selecciona_maximo(dim_ctx=dim_ctx):
+            best = max(esc_rows, key=lambda r: float(r['u']))
+            return float(best['u']), f'máx(u) peor caso → «{best["nombre"]}»', best
+        best = min(esc_rows, key=lambda r: float(r['u']))
+        return float(best['u']), f'mín(u) peor caso → «{best["nombre"]}»', best
+    if agregacion == ESCENARIO_AGREG_INDEPENDIENTE:
+        first = esc_rows[0]
+        return float(first['u']), f'escenario «{first["nombre"]}» (sin agregación)', first
+    return _weighted_mean(pairs), 'Σ(u·peso_escenario)/Σ(peso_escenario)', None
+
+
+def _rollup_aggregate(pairs: list[tuple[float, float]], ctx: dict[str, str] | None) -> float:
+    if ctx and ctx.get('modo_valor_terminal') == 'valor_bruto':
+        return sum(v for v, _ in pairs)
+    return _weighted_mean(pairs)
+
+
 def _nodo_level_label(nodo: NodoArbol) -> str:
     tipo = getattr(nodo, 'tipo_nivel', None)
     if tipo and getattr(tipo, 'nombre', None):
@@ -537,6 +607,7 @@ def _build_leaf_trace(
     util_fn: dict,
     fields: dict,
     debug_logs: list[str] | None = None,
+    dim_ctx: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     from .pydecision_bridge import evaluate_utility
 
@@ -545,12 +616,17 @@ def _build_leaf_trace(
     nodo_id = terminal['nodo_id']
     familia = (fields.get('familia') or '').strip()
     es_riesgo = fields.get('modo_evaluacion') == MODO_INCERTIDUMBRE
+    valor_bruto = bool(dim_ctx and dim_ctx.get('modo_valor_terminal') == 'valor_bruto')
+    agregacion = (dim_ctx or {}).get('escenario_agregacion') or 'compensatorio'
     familia_label = (
-        'Riesgo (probabilidad × consecuencia)'
-        if es_riesgo else (etiqueta_familia(familia) if familia else 'Sin familia')
+        'Valor bruto (sin transformación)' if valor_bruto and not es_riesgo
+        else 'Riesgo (probabilidad × consecuencia)' if es_riesgo
+        else (etiqueta_familia(familia) if familia else 'Sin familia')
     )
     esc_rows: list[dict[str, Any]] = []
     keys_used: list[dict[str, Any]] = []
+    escenario_elegido = None
+    formula_esc = None
 
     l_val = util_fn.get('threshold')
     u_val = util_fn.get('goal')
@@ -576,7 +652,10 @@ def _build_leaf_trace(
                     _sim_log(debug_logs, f'  ✗ riesgo incompleto key={key} raw={raw!r}')
                     return None
             else:
-                u = evaluate_utility(raw, util_fn)
+                u = _coerce_terminal_value(raw, util_fn, es_riesgo=False, valor_bruto=valor_bruto)
+                if u is None:
+                    _sim_log(debug_logs, f'  ✗ valor no numérico key={key} raw={raw!r}')
+                    return None
             w = float(esc.peso or 0)
             pairs.append((u, w))
             try:
@@ -600,9 +679,18 @@ def _build_leaf_trace(
                 'peso': w,
                 'valor_key': key,
             })
-        valor = _weighted_mean(pairs)
-        formula_esc = 'Σ(u·peso_escenario)/Σ(peso_escenario)'
-        _sim_log(debug_logs, f'  ⇒ agregado escenarios u={valor:.6f}')
+        valor, formula_esc, escenario_elegido = _aggregate_escenario_values(
+            esc_rows, pairs, agregacion, dim_ctx=dim_ctx,
+        )
+        if valor is None:
+            return None
+        if escenario_elegido:
+            _sim_log(
+                debug_logs,
+                f'  ⇒ agregado escenarios u={valor:.6f} ({formula_esc})',
+            )
+        else:
+            _sim_log(debug_logs, f'  ⇒ agregado escenarios u={valor:.6f}')
     else:
         key = valor_key(nivel, nodo_id, None)
         raw = valores.get(key, '')
@@ -616,7 +704,10 @@ def _build_leaf_trace(
                 _sim_log(debug_logs, f'  ✗ riesgo incompleto key={key} raw={raw!r}')
                 return None
         else:
-            valor = evaluate_utility(raw, util_fn)
+            valor = _coerce_terminal_value(raw, util_fn, es_riesgo=False, valor_bruto=valor_bruto)
+            if valor is None:
+                _sim_log(debug_logs, f'  ✗ valor no numérico key={key} raw={raw!r}')
+                return None
         _sim_log(debug_logs, f'  valor único key={key} x={raw!r} u={valor:.6f}')
         esc_rows.append({
             'escenario_id': None,
@@ -650,7 +741,8 @@ def _build_leaf_trace(
         'utilidad_fn': util_fn if settings.DEBUG else None,
         'escenarios': esc_rows,
         'formula_escenarios': formula_esc,
-        'formula': f'u(x) — {familia_label}',
+        'formula': f'{"x" if valor_bruto else "u(x)"} — {familia_label}',
+        'escenario_elegido': escenario_elegido.get('nombre') if escenario_elegido else None,
         'hijos': [],
         'debug': {
             'L': l_val,
@@ -667,13 +759,14 @@ def _terminal_utility(
     terminal: dict,
     escenarios: list,
     utility_fn: dict,
+    dim_ctx: dict[str, str] | None = None,
 ) -> float | None:
-    from .pydecision_bridge import evaluate_utility
-
     es_riesgo = terminal.get('modo_evaluacion') == MODO_INCERTIDUMBRE
+    valor_bruto = bool(dim_ctx and dim_ctx.get('modo_valor_terminal') == 'valor_bruto')
+    agregacion = (dim_ctx or {}).get('escenario_agregacion') or 'compensatorio'
 
     def _eval(raw):
-        return riesgo_producto(raw) if es_riesgo else evaluate_utility(raw, utility_fn)
+        return _coerce_terminal_value(raw, utility_fn, es_riesgo=es_riesgo, valor_bruto=valor_bruto)
 
     if not escenarios:
         raw = valores.get(valor_key(terminal['nivel'], terminal['nodo_id'], None), '')
@@ -681,6 +774,7 @@ def _terminal_utility(
             return None
         return _eval(raw)
 
+    esc_rows: list[dict] = []
     pairs: list[tuple[float, float]] = []
     for esc in escenarios:
         key = valor_key(terminal['nivel'], terminal['nodo_id'], esc.id)
@@ -692,8 +786,12 @@ def _terminal_utility(
             return None
         w = float(esc.peso or 0)
         pairs.append((u, w))
+        esc_rows.append({'nombre': esc.nombre, 'u': u})
 
-    return _weighted_mean(pairs)
+    valor, _, _ = _aggregate_escenario_values(
+        esc_rows, pairs, agregacion, dim_ctx=dim_ctx,
+    )
+    return valor
 
 
 def _rollup_trace_nodo_arbol(
@@ -702,6 +800,7 @@ def _rollup_trace_nodo_arbol(
     by_parent: dict[int | None, list[NodoArbol]],
     debug_logs: list[str] | None = None,
     config_map: dict[int, dict] | None = None,
+    dim_ctx: dict[str, str] | None = None,
 ) -> tuple[float, dict[str, Any]]:
     from .nodo_escenario_service import nodo_effective_peso
 
@@ -726,7 +825,7 @@ def _rollup_trace_nodo_arbol(
     pairs: list[tuple[float, float]] = []
     for h in hijos:
         score, child_trace = _rollup_trace_nodo_arbol(
-            h, leaf_traces, by_parent, debug_logs, config_map,
+            h, leaf_traces, by_parent, debug_logs, config_map, dim_ctx,
         )
         w = nodo_effective_peso(h, config_map)
         pairs.append((score, w))
@@ -736,11 +835,12 @@ def _rollup_trace_nodo_arbol(
             f'  rollup hijo «{h.nombre}» u={score:.6f} peso={w} contrib={score * w:.6f}',
         )
 
-    valor = _weighted_mean(pairs)
+    valor = _rollup_aggregate(pairs, dim_ctx)
     sum_pesos = sum(w for _, w in pairs)
+    rollup_formula = 'Σ(xᵢ)' if dim_ctx and dim_ctx.get('modo_valor_terminal') == 'valor_bruto' else 'Σ(uᵢ·pesoᵢ)/Σ(pesoᵢ)'
     _sim_log(
         debug_logs,
-        f'ROLLUP «{nodo.nombre}» Σ(u·w)/Σw = {valor:.6f} (Σw={sum_pesos})',
+        f'ROLLUP «{nodo.nombre}» {rollup_formula} = {valor:.6f} (Σw={sum_pesos})',
     )
     return valor, {
         'kind': 'rollup',
@@ -749,7 +849,7 @@ def _rollup_trace_nodo_arbol(
         'nombre': nodo.nombre,
         'level_label': _nodo_level_label(nodo),
         'valor': _round6(valor),
-        'formula': 'Σ(uᵢ·pesoᵢ)/Σ(pesoᵢ)',
+        'formula': rollup_formula,
         'suma_pesos': _round6(sum_pesos),
         'hijos': hijo_rows,
     }
@@ -788,6 +888,7 @@ def _calcular_dimension_nodo_arbol(
     )
 
     config_map = resolve_tree_config_for_calc(omoe.id, escenarios)
+    dim_ctx = _dim_calc_context(omoe)
     leaf_traces: dict[int, dict] = {}
     detalle_hojas = []
 
@@ -817,7 +918,9 @@ def _calcular_dimension_nodo_arbol(
             valor_meta=fields.get('valor_meta'),
             sentido_mejora=fields.get('sentido_mejora', ''),
         )
-        trace = _build_leaf_trace(t_enriched, valores, escenarios, util_fn, fields, debug_logs)
+        trace = _build_leaf_trace(
+            t_enriched, valores, escenarios, util_fn, fields, debug_logs, dim_ctx,
+        )
         if trace is None:
             continue
         leaf_traces[t['nodo_id']] = trace
@@ -863,7 +966,7 @@ def _calcular_dimension_nodo_arbol(
     detalle_raices = []
     for r in roots:
         score, root_trace = _rollup_trace_nodo_arbol(
-            r, leaf_traces, by_parent, debug_logs, config_map,
+            r, leaf_traces, by_parent, debug_logs, config_map, dim_ctx,
         )
         w = nodo_effective_peso(r, config_map)
         root_pairs.append((score, w))
@@ -875,7 +978,8 @@ def _calcular_dimension_nodo_arbol(
             'peso': w,
         })
 
-    dimension_val = _weighted_mean(root_pairs)
+    dimension_val = _rollup_aggregate(root_pairs, dim_ctx)
+    root_formula = 'Σ(x_raíz)' if dim_ctx.get('modo_valor_terminal') == 'valor_bruto' else 'Σ(u_raíz·peso)/Σ(peso)'
     trace = {
         'kind': 'dimension',
         'nivel': NIVEL_OMOE,
@@ -883,7 +987,9 @@ def _calcular_dimension_nodo_arbol(
         'nombre': omoe_nombre,
         'rama': omoe.rama_evaluacion,
         'valor': _round6(dimension_val),
-        'formula': 'Σ(u_raíz·peso)/Σ(peso) sobre raíces del árbol',
+        'formula': f'{root_formula} sobre raíces del árbol',
+        'escenario_agregacion': dim_ctx.get('escenario_agregacion'),
+        'modo_valor_terminal': dim_ctx.get('modo_valor_terminal'),
         'suma_pesos': _round6(sum(w for _, w in root_pairs)),
         'hijos': root_rows,
         'escenario_config_id': escenarios[0].id if escenarios else None,
@@ -910,7 +1016,10 @@ def _calcular_dimension_omoe_terminal(
         valor_meta=fields.get('valor_meta'),
         sentido_mejora=fields.get('sentido_mejora', ''),
     )
-    leaf = _build_leaf_trace(t_enriched, valores, escenarios, util_fn, fields, debug_logs)
+    dim_ctx = _dim_calc_context(omoe)
+    leaf = _build_leaf_trace(
+        t_enriched, valores, escenarios, util_fn, fields, debug_logs, dim_ctx,
+    )
     u = (leaf or {}).get('valor', 0.0)
     omoe_nombre = omoe.nombre_modelo or omoe.codigo or f'Dimensión #{omoe.pk}'
     trace = {
@@ -953,6 +1062,7 @@ def _calcular_dimension_legacy(
     from .mcdm_utils import build_hierarchy_export
 
     _sim_log(debug_logs, f'Dimensión legacy «{omoe.nombre_modelo}» — {len(terminales)} terminales')
+    dim_ctx = _dim_calc_context(omoe)
     leaf_traces: dict[tuple[str, int], dict] = {}
     for t in terminales:
         obj = _load_criterio(t['nivel'], t['nodo_id'])
@@ -972,7 +1082,9 @@ def _calcular_dimension_legacy(
             valor_meta=fields.get('valor_meta'),
             sentido_mejora=fields.get('sentido_mejora', ''),
         )
-        trace = _build_leaf_trace(t_enriched, valores, escenarios, util_fn, fields, debug_logs)
+        trace = _build_leaf_trace(
+            t_enriched, valores, escenarios, util_fn, fields, debug_logs, dim_ctx,
+        )
         if trace is not None:
             leaf_traces[(t['nivel'], t['nodo_id'])] = trace
 
@@ -1116,6 +1228,7 @@ def _calcular_dimension_weighted_sum(
     hojas: list[dict[str, Any]] = []
     warnings: list[str] = []
 
+    dim_ctx = _dim_calc_context(omoe)
     for t in terminales:
         obj = _load_criterio(t['nivel'], t['nodo_id'])
         fields = _criterio_fields(obj)
@@ -1128,7 +1241,7 @@ def _calcular_dimension_weighted_sum(
             valor_meta=fields.get('valor_meta'),
             sentido_mejora=fields.get('sentido_mejora', ''),
         )
-        u = _terminal_utility(valores, t, escenarios, util_fn)
+        u = _terminal_utility(valores, t, escenarios, util_fn, dim_ctx)
         if u is None:
             warnings.append(f'Hoja «{t.get("nombre")}» sin valor evaluable; se omite.')
             continue
@@ -1141,7 +1254,7 @@ def _calcular_dimension_weighted_sum(
         })
 
     fallback = config.get('fallback_to_arithmetic_mean_when_zero_weights', True)
-    valor = _weighted_mean(pairs) if pairs else 0.0
+    valor = _rollup_aggregate(pairs, dim_ctx) if pairs else 0.0
     if not pairs and fallback:
         warnings.append('Sin hojas evaluables; valor=0.')
 
@@ -1191,6 +1304,122 @@ def _calcular_dimension(
     )
 
 
+def _calcular_dimension_con_resumen_escenarios(
+    omoe: Omoe,
+    terminales: list[dict],
+    escenarios: list,
+    valores: dict[str, str],
+    debug_logs: list[str] | None = None,
+) -> tuple[float, dict[str, Any], dict[str, Any] | None]:
+    """
+    Para mínimo/máximo-mejor y peor caso evalúa el árbol completo por escenario
+    y elige el más favorable (Eq. 22) o el más adverso (Eq. 23).
+    En modo compensatorio mantiene la agregación ponderada habitual (Eq. 21).
+    """
+    from .escenario_agregacion_choices import (
+        ESCENARIO_AGREG_MAXIMO_MEJOR,
+        ESCENARIO_AGREG_MINIMO_MEJOR,
+        ESCENARIO_AGREG_PEOR_CASO,
+        ESCENARIO_AGREG_SELECCION,
+        ESCENARIO_AGREG_COMPENSATORIO,
+        peor_caso_selecciona_maximo,
+    )
+
+    agregacion = getattr(omoe, 'escenario_agregacion', None) or ESCENARIO_AGREG_COMPENSATORIO
+
+    if agregacion not in ESCENARIO_AGREG_SELECCION:
+        valor, detalle = _calcular_dimension(
+            omoe, terminales, escenarios, valores, debug_logs,
+        )
+        return valor, detalle, None
+
+    if not escenarios:
+        valor, detalle = _calcular_dimension(
+            omoe, terminales, escenarios, valores, debug_logs,
+        )
+        return valor, detalle, None
+
+    from .evaluacion_service import filter_escenarios_con_valores
+
+    escenarios_candidatos = filter_escenarios_con_valores(
+        escenarios, terminales, valores,
+    )
+    omitidos = [
+        esc.nombre for esc in escenarios
+        if esc.id not in {c.id for c in escenarios_candidatos}
+    ]
+    if omitidos:
+        _sim_log(
+            debug_logs,
+            '  omitidos sin datos de evaluación: ' + ', '.join(
+                f'«{n}»' for n in omitidos if n
+            ),
+        )
+
+    por_escenario: list[dict[str, Any]] = []
+    for esc in escenarios_candidatos:
+        valor_esc, _det = _calcular_dimension(
+            omoe, terminales, [esc], valores, debug_logs,
+        )
+        por_escenario.append({
+            'escenario_id': esc.id,
+            'nombre': esc.nombre or f'Escenario {esc.id}',
+            'valor': _round6(valor_esc),
+        })
+        _sim_log(
+            debug_logs,
+            f'  escenario «{esc.nombre}» valor dimensión={valor_esc:.6f}',
+        )
+
+    if agregacion == ESCENARIO_AGREG_MINIMO_MEJOR:
+        best = min(por_escenario, key=lambda row: float(row['valor']))
+        formula = 'Escenario con menor valor agregado (mínimo-mejor, Eq. 22)'
+    elif agregacion == ESCENARIO_AGREG_MAXIMO_MEJOR:
+        best = max(por_escenario, key=lambda row: float(row['valor']))
+        formula = 'Escenario con mayor valor agregado (máximo-mejor, Eq. 22)'
+    elif peor_caso_selecciona_maximo(omoe=omoe):
+        best = max(por_escenario, key=lambda row: float(row['valor']))
+        formula = 'Escenario más adverso — máx (peor caso costo/riesgo, Eq. 23)'
+    else:
+        best = min(por_escenario, key=lambda row: float(row['valor']))
+        formula = 'Escenario más adverso — mín (peor caso beneficio, Eq. 23)'
+
+    escenario_resumen = {
+        'escenario_agregacion': agregacion,
+        'escenario_elegido_id': best['escenario_id'],
+        'escenario_elegido': best['nombre'],
+        'valor_bajo_escenario': best['valor'],
+        'formula': formula,
+        'por_escenario': por_escenario,
+        'escenarios_omitidos_sin_datos': omitidos,
+    }
+    _sim_log(
+        debug_logs,
+        f'  ⇒ escenario elegido «{best["nombre"]}» valor={best["valor"]} ({agregacion})',
+    )
+
+    best_esc = next(
+        (esc for esc in escenarios_candidatos if esc.id == best['escenario_id']),
+        escenarios_candidatos[0],
+    )
+    _, detalle = _calcular_dimension(
+        omoe, terminales, [best_esc], valores, debug_logs,
+    )
+
+    if isinstance(detalle, dict):
+        detalle = {**detalle, 'escenario_resumen': escenario_resumen}
+        trace = detalle.get('trace')
+        if isinstance(trace, dict):
+            detalle['trace'] = {
+                **trace,
+                'escenario_elegido': best['nombre'],
+                'escenario_agregacion': agregacion,
+                'escenario_resumen': escenario_resumen,
+            }
+
+    return float(best['valor']), detalle, escenario_resumen
+
+
 def _rollup_alternativas_simulacion(
     proyecto: Proyecto,
     *,
@@ -1213,14 +1442,20 @@ def _rollup_alternativas_simulacion(
             omoe = Omoe.objects.get(pk=dim['omoe_id'])
             escenarios = escenarios_for_dimension(omoe)
             terminales = collect_terminal_nodes_for_omoe(omoe)
-            valor_dim, detalle = _calcular_dimension(
+            valor_dim, detalle, escenario_resumen = _calcular_dimension_con_resumen_escenarios(
                 omoe, terminales, escenarios, valores, debug_logs,
             )
+            agregacion = getattr(omoe, 'escenario_agregacion', None) or 'compensatorio'
             dim_scores.append(valor_dim)
             dimensiones_out.append({
                 'omoe_id': dim['omoe_id'],
                 'omoe_nombre': dim['omoe_nombre'],
                 'rama_evaluacion': dim.get('rama_evaluacion'),
+                'escenario_agregacion': agregacion,
+                'escenario_elegido': (
+                    escenario_resumen.get('escenario_elegido') if escenario_resumen else None
+                ),
+                'escenarios_resumen': escenario_resumen,
                 'valor': round(valor_dim, 6),
                 'detalle': detalle,
             })
@@ -1292,11 +1527,13 @@ def preview_simulacion(
 
     from .madm_pipeline import (
         build_matrix_from_rollups,
+        filter_dimensiones_meta,
         preview_madm_pipeline,
     )
 
     try:
         resultados, dimensiones_meta = _rollup_alternativas_simulacion(proyecto)
+        filtered_meta = filter_dimensiones_meta(dimensiones_meta, opciones)
         matrix, alt_names, dim_names, directions = build_matrix_from_rollups(
             resultados,
             dimensiones_meta,
@@ -1308,7 +1545,7 @@ def preview_simulacion(
             dim_names,
             directions,
             opciones,
-            dimensiones_meta=dimensiones_meta,
+            dimensiones_meta=filtered_meta,
         )
     except ValidationError as exc:
         detail = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
@@ -1347,30 +1584,37 @@ def calcular_simulacion(
     )
 
     if solo_matriz:
-        # El usuario decidió guardar únicamente la matriz de utilidades por
-        # dimensión, sin continuar con normalización, Pareto ni ranking MADM.
+        from .madm_pipeline import filter_dimensiones_meta, filter_rollups_by_dimensions
+
+        active_meta = filter_dimensiones_meta(dimensiones_meta, opts)
+        resultados_filtrados = filter_rollups_by_dimensions(resultados, active_meta)
         _sim_log(debug_logs, 'Modo solo matriz: se omite el pipeline MADM.')
         return {
             'ok': True,
             'proyecto_id': proyecto.id,
-            'alternativas': resultados,
+            'alternativas': resultados_filtrados,
             'metodo': 'solo_matriz',
             'solo_matriz': True,
             'descripcion': (
-                'Solo matriz de utilidades por dimensión (agregación del árbol de '
-                'criterios); sin normalización, Pareto ni ranking MADM.'
+                'Comparación solo con matriz de utilidades por dimensión (agregación '
+                'del árbol de criterios); sin normalización, Pareto ni ranking MADM.'
             ),
-            'opciones_calculo': {'solo_matriz': True},
+            'opciones_calculo': {
+                'solo_matriz': True,
+                'dimensiones_normalizar': [m['nombre'] for m in active_meta],
+            },
             'debug_logs': debug_logs,
         }
 
     from .madm_pipeline import (
         apply_madm_ranking_to_alternativas,
         build_matrix_from_rollups,
+        filter_dimensiones_meta,
         preview_madm_pipeline,
         run_madm_pipeline,
     )
 
+    filtered_meta = filter_dimensiones_meta(dimensiones_meta, opciones)
     matrix, alt_names, dim_names, directions = build_matrix_from_rollups(
         resultados,
         dimensiones_meta,
@@ -1382,7 +1626,7 @@ def calcular_simulacion(
         dim_names,
         directions,
         opciones,
-        dimensiones_meta=dimensiones_meta,
+        dimensiones_meta=filtered_meta,
     )
     preview = preview_madm_pipeline(
         matrix,
@@ -1390,7 +1634,7 @@ def calcular_simulacion(
         dim_names,
         directions,
         opciones,
-        dimensiones_meta=dimensiones_meta,
+        dimensiones_meta=filtered_meta,
     )
     resultados = apply_madm_ranking_to_alternativas(resultados, pipeline_result)
 
@@ -1448,7 +1692,7 @@ def resumen_opciones_calculo(opciones: dict[str, Any] | None) -> str:
     if not opciones:
         return ''
     if opciones.get('solo_matriz'):
-        return 'Solo matriz de utilidades'
+        return 'Comparación solo con matriz de utilidades'
     madm = _MADM_LABELS.get(opciones.get('metodo_madm', ''), opciones.get('metodo_madm', 'MADM'))
     pesos = _PESOS_LABELS.get(
         opciones.get('metodo_pesos', ''),

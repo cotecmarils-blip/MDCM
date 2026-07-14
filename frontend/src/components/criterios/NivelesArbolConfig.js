@@ -1,22 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { authApi, nivelesArbolApi } from '../../api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { authApi, nivelesArbolApi, tiposDimensionApi } from '../../api';
 import { MODAL_BACKDROP_CLASS } from '../../utils/modalBackdrop';
-import { RAMA_META } from './ramaContext';
+import { getRamaMeta } from './ramaContext';
 import { MAX_NIVELES_ARBOL, MIN_NIVELES_ARBOL } from './nivelArbolRules';
 
-const RAMAS = ['omoe', 'omoc', 'omor'];
-
-function emptyDraft() {
-  return { omoe: [], omoc: [], omor: [] };
-}
-
 function NivelesArbolConfig({ proyectoId, open, onClose, onSaved }) {
-  const [draft, setDraft] = useState(emptyDraft);
+  const [draft, setDraft] = useState({});
   const [ramaTab, setRamaTab] = useState('omoe');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [canManage, setCanManage] = useState(false);
+  const [labels, setLabels] = useState({});
+
+  const ramas = useMemo(() => Object.keys(draft || {}), [draft]);
 
   useEffect(() => {
     if (!open || !proyectoId) return undefined;
@@ -26,16 +23,20 @@ function NivelesArbolConfig({ proyectoId, open, onClose, onSaved }) {
       try {
         setLoading(true);
         setError(null);
-        const [nivelesRes, membershipRes] = await Promise.all([
+        const [nivelesRes, membershipRes, tiposRes] = await Promise.all([
           nivelesArbolApi.getAll(proyectoId),
           authApi.getProyectoMembership(proyectoId).catch(() => ({ data: null })),
+          tiposDimensionApi.list().catch(() => ({ data: [] })),
         ]);
         if (cancelled) return;
-        setDraft({
-          omoe: nivelesRes.data?.omoe || [],
-          omoc: nivelesRes.data?.omoc || [],
-          omor: nivelesRes.data?.omor || [],
-        });
+        const data = nivelesRes.data || {};
+        setDraft(data);
+        const keys = Object.keys(data);
+        setRamaTab((prev) => (keys.includes(prev) ? prev : (keys[0] || 'omoe')));
+        const tipoItems = Array.isArray(tiposRes.data)
+          ? tiposRes.data
+          : (tiposRes.data?.results || []);
+        setLabels(Object.fromEntries(tipoItems.map((t) => [t.codigo, t.nombre])));
         const m = membershipRes.data;
         setCanManage(Boolean(m?.puede_gestionar_miembros || m?.es_admin_global));
       } catch (err) {
@@ -111,23 +112,23 @@ function NivelesArbolConfig({ proyectoId, open, onClose, onSaved }) {
     }
   };
 
-  const ramaMeta = RAMA_META[ramaTab];
+  const ramaMeta = getRamaMeta(ramaTab);
 
   return (
     <div className={MODAL_BACKDROP_CLASS}>
       <div className="bg-white dark:bg-navy-900 rounded-xl shadow-xl max-w-2xl w-full p-5 space-y-4 max-h-[90vh] flex flex-col">
         <div>
           <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">
-            Niveles del árbol por dimensión
+            Niveles del árbol por tipo de dimensión
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Configuración por proyecto para OMOE, OMOC y OMOR. Puedes usar entre{' '}
-            {MIN_NIVELES_ARBOL} y {MAX_NIVELES_ARBOL} niveles en cada rama.
+            Configuración por proyecto y tipo (catálogo global). Entre{' '}
+            {MIN_NIVELES_ARBOL} y {MAX_NIVELES_ARBOL} niveles por tipo.
           </p>
         </div>
 
-        <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700/60 p-0.5 bg-gray-50 dark:bg-navy-900/40 shrink-0">
-          {RAMAS.map((rama) => (
+        <div className="flex flex-wrap gap-1 rounded-lg border border-gray-200 dark:border-gray-700/60 p-0.5 bg-gray-50 dark:bg-navy-900/40 shrink-0">
+          {ramas.map((rama) => (
             <button
               key={rama}
               type="button"
@@ -138,7 +139,7 @@ function NivelesArbolConfig({ proyectoId, open, onClose, onSaved }) {
                   : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
-              {RAMA_META[rama]?.label || rama.toUpperCase()}
+              {labels[rama] || getRamaMeta(rama).label}
             </button>
           ))}
         </div>
@@ -158,71 +159,57 @@ function NivelesArbolConfig({ proyectoId, open, onClose, onSaved }) {
                 key={nivel.id ?? `new-${index}`}
                 className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-700/60"
               >
-                <span className="text-xs font-semibold text-gray-400 w-8 shrink-0">
-                  {index + 1}
-                </span>
+                <span className="text-xs text-gray-400 w-8 shrink-0">{index + 1}</span>
                 <input
                   type="text"
                   value={nivel.nombre || ''}
-                  onChange={(e) => handleChange(index, 'nombre', e.target.value)}
                   disabled={!canManage}
-                  className="flex-1 text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-navy-900/40"
-                  placeholder={`Nivel ${index + 1}`}
+                  onChange={(e) => handleChange(index, 'nombre', e.target.value)}
+                  className="flex-1 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent px-2 py-1.5 text-sm"
                 />
-                <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 shrink-0">
+                <label className="flex items-center gap-1 text-xs text-gray-500 shrink-0">
                   <input
                     type="checkbox"
                     checked={nivel.activo !== false}
-                    onChange={(e) => handleChange(index, 'activo', e.target.checked)}
                     disabled={!canManage}
+                    onChange={(e) => handleChange(index, 'activo', e.target.checked)}
                   />
                   Activo
                 </label>
-                {canManage && niveles.length > MIN_NIVELES_ARBOL && (
+                {canManage && (
                   <button
                     type="button"
+                    className="text-xs text-red-500 shrink-0"
                     onClick={() => handleRemoveNivel(index)}
-                    className="text-xs text-red-500 hover:text-red-600 shrink-0 px-1"
-                    title="Quitar nivel"
+                    disabled={niveles.length <= MIN_NIVELES_ARBOL}
                   >
-                    ✕
+                    Quitar
                   </button>
                 )}
               </div>
             ))}
+            {canManage && (
+              <button
+                type="button"
+                className="btn btn-secondary text-sm w-full"
+                onClick={handleAddNivel}
+                disabled={niveles.length >= MAX_NIVELES_ARBOL}
+              >
+                + Añadir nivel
+              </button>
+            )}
           </div>
         )}
 
-        {canManage && !loading && niveles.length < MAX_NIVELES_ARBOL && (
-          <button
-            type="button"
-            onClick={handleAddNivel}
-            className="btn-sm border-gray-200 dark:border-gray-700/60 w-full"
-          >
-            + Añadir nivel ({niveles.length}/{MAX_NIVELES_ARBOL})
-          </button>
-        )}
+        {error && <p className="text-xs text-red-500">{error}</p>}
 
-        {!canManage && !loading && (
-          <p className="text-sm text-amber-600 dark:text-amber-400">
-            Solo el jefe del proyecto o un administrador global puede editar estos niveles.
-          </p>
-        )}
-
-        {error && <p className="text-sm text-red-500">{error}</p>}
-
-        <div className="flex justify-end gap-2 shrink-0">
-          <button type="button" onClick={onClose} className="btn-sm border-gray-200 dark:border-gray-700/60">
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" className="btn btn-secondary text-sm" onClick={onClose} disabled={saving}>
             Cerrar
           </button>
           {canManage && (
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || loading}
-              className="btn-sm btn-primary disabled:opacity-50"
-            >
-              {saving ? 'Guardando…' : `Guardar ${ramaMeta?.label || ramaTab}`}
+            <button type="button" className="btn btn-primary text-sm" onClick={handleSave} disabled={saving || loading}>
+              {saving ? 'Guardando…' : 'Guardar'}
             </button>
           )}
         </div>

@@ -7,10 +7,12 @@ from .access import (
     can_create_resource,
     can_delete_proyecto,
     can_manage_members,
+    can_manage_users_globally,
     can_read_resource,
     can_write_resource,
     get_membership,
     is_global_admin,
+    manageable_proyecto_ids,
     resolve_create_stub,
     resource_kind_for_model,
     user_proyecto_ids,
@@ -85,10 +87,11 @@ class MembershipManagePermission(BasePermission):
             return False
         if is_global_admin(request.user):
             return True
-        if getattr(view, 'action', None) in {
-            'retrieve', 'update', 'partial_update', 'destroy',
-        }:
-            return True
+        action = getattr(view, 'action', None)
+        if action == 'list':
+            return can_manage_users_globally(request.user)
+        if action in {'retrieve', 'update', 'partial_update', 'destroy'}:
+            return can_manage_users_globally(request.user)
         proyecto_id = request.query_params.get('proyecto') or request.data.get('proyecto')
         if not proyecto_id:
             return False
@@ -97,7 +100,7 @@ class MembershipManagePermission(BasePermission):
     def has_object_permission(self, request, view, obj):
         if is_global_admin(request.user):
             return True
-        return can_manage_members(request.user, obj.proyecto_id)
+        return obj.proyecto_id in manageable_proyecto_ids(request.user)
 
 
 def membership_payload(user, proyecto_id):

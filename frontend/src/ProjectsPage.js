@@ -4,14 +4,16 @@ import { useTheme } from './ThemeContext';
 import { useAuth } from './context/AuthContext';
 import { proyectos } from './api';
 import ThemeToggle from './components/ThemeToggle';
+import UserMenu from './components/UserMenu';
+import { resolveMediaUrl } from './utils/media';
 
 function ProjectsPage() {
   const { isDark } = useTheme();
   const {
-    user,
     logout,
     esAdminGlobal,
     puedeCrearProyecto,
+    puedeGestionarUsuarios,
     refreshProfile,
   } = useAuth();
   const [projectList, setProjectList] = useState([]);
@@ -19,6 +21,7 @@ function ProjectsPage() {
   const [checkingAccess, setCheckingAccess] = useState(false);
   const [sinAccesoProyectos, setSinAccesoProyectos] = useState(false);
   const [error, setError] = useState(null);
+  const [brokenImages, setBrokenImages] = useState(() => new Set());
 
   const loadProjects = useCallback(async () => {
     try {
@@ -70,10 +73,10 @@ function ProjectsPage() {
     return (
       <div className={`min-h-screen flex items-center justify-center px-4 ${isDark ? 'bg-navy-950' : 'bg-gray-50'}`}>
         <div className={`max-w-md w-full rounded-2xl border p-8 text-center ${isDark ? 'bg-navy-900 border-navy-700 text-white' : 'bg-white border-gray-200 text-slate-900'}`}>
-          <h2 className="text-xl font-bold mb-3">Acceso no disponible</h2>
+          <h2 className="text-xl font-bold mb-3">Sin proyectos disponibles</h2>
           <p className={`text-sm mb-6 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
-            Su tiempo de acceso al software ha terminado o no tiene proyectos asignados.
-            Para solicitar acceso nuevamente, comuníquese con el gerente del proyecto.
+            No tiene proyectos con licencia vigente asignada.
+            Puede ingresar al software, pero necesita que un gerente le asigne acceso a uno o más proyectos.
           </p>
           <button
             type="button"
@@ -93,24 +96,32 @@ function ProjectsPage() {
         <div className="flex justify-between items-center mb-8 flex-col md:flex-row gap-4">
           <h1 className={`text-4xl font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Proyectos</h1>
           <div className="flex gap-4 items-center w-full md:w-auto flex-wrap justify-end">
-            {user && (
-              <span className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
-                {user.first_name || user.username}
-                {esAdminGlobal ? ' (admin)' : ''}
-              </span>
-            )}
             <ThemeToggle />
-            <button
-              type="button"
-              onClick={logout}
-              className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                isDark
-                  ? 'text-gray-200 hover:bg-navy-800'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              Cerrar sesión
-            </button>
+            <UserMenu isDark={isDark} />
+            {puedeGestionarUsuarios && (
+              <Link
+                to="/usuarios"
+                className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                  isDark
+                    ? 'border-navy-600 text-gray-200 hover:bg-navy-800'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                Usuarios y licencias
+              </Link>
+            )}
+            {esAdminGlobal && (
+              <Link
+                to="/tipos-dimension"
+                className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                  isDark
+                    ? 'border-navy-600 text-gray-200 hover:bg-navy-800'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                Tipos de dimensión
+              </Link>
+            )}
             {puedeCrearProyecto && (
               <Link
                 to="/proyecto/nuevo"
@@ -139,11 +150,15 @@ function ProjectsPage() {
               className={`group relative overflow-hidden rounded-lg shadow-lg hover:shadow-2xl transition-all ring-1 ring-transparent hover:ring-navy-500/30 ${isDark ? 'bg-navy-900' : 'bg-white'}`}
             >
               <div className="aspect-video bg-gradient-to-br from-navy-600 to-navy-700 overflow-hidden">
-                {project.foto ? (
+                {project.foto && !brokenImages.has(project.id) ? (
                   <img
-                    src={project.foto}
+                    src={resolveMediaUrl(project.foto)}
                     alt={project.nombre}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    loading="lazy"
+                    onError={() => {
+                      setBrokenImages((prev) => new Set(prev).add(project.id));
+                    }}
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-white/40 text-sm">

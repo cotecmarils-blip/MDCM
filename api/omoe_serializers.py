@@ -312,6 +312,7 @@ class OmoeSerializer(serializers.ModelSerializer):
             'modo_evaluacion', 'consecuencia_descripciones',
             'unidad', 'tipo_dato', 'valor_umbral', 'valor_meta', 'sentido_mejora',
             'calculation_method', 'calculation_config', 'enable_sensitivity_analysis',
+            'escenario_agregacion', 'modo_valor_terminal',
             'fecha_creacion', 'fecha_actualizacion',
         ]
         read_only_fields = ['id', 'orden', 'fecha_creacion', 'fecha_actualizacion']
@@ -379,6 +380,38 @@ class OmoeSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({
                         'calculation_config': 'UTA: configure preferencias antes de evaluar.',
                     })
+
+        from .escenario_agregacion_choices import (
+            ESCENARIO_AGREG_COMPENSATORIO,
+            ESCENARIO_AGREG_MINIMO_MEJOR,
+        )
+        from .modo_valor_terminal_choices import MODO_VALOR_BRUTO, MODO_VALOR_UTILIDAD
+        from .tipo_dimension_service import assert_codigo_activo, defaults_for_codigo
+
+        rama = attrs.get(
+            'rama_evaluacion',
+            getattr(self.instance, 'rama_evaluacion', '') or 'omoe',
+        )
+        if 'rama_evaluacion' in attrs or not self.instance:
+            try:
+                rama = assert_codigo_activo(rama)
+            except Exception as exc:
+                from django.core.exceptions import ValidationError as DjangoValidationError
+                if isinstance(exc, DjangoValidationError):
+                    msg = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+                    raise serializers.ValidationError({'rama_evaluacion': msg}) from exc
+                raise
+            attrs['rama_evaluacion'] = rama
+
+        defs = defaults_for_codigo(rama)
+        if 'escenario_agregacion' not in attrs:
+            attrs['escenario_agregacion'] = defs.get(
+                'escenario_agregacion', ESCENARIO_AGREG_COMPENSATORIO,
+            )
+        if 'modo_valor_terminal' not in attrs:
+            attrs['modo_valor_terminal'] = defs.get(
+                'modo_valor_terminal', MODO_VALOR_UTILIDAD,
+            )
 
         return attrs
 

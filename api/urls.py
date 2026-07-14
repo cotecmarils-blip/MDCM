@@ -8,6 +8,7 @@ from .auth_views import (
     login_view,
     logout_view,
     me_view,
+    profile_view,
     proyecto_membership_view,
     search_users_view,
 )
@@ -27,6 +28,7 @@ router.register(r'atributos', views.AtributoViewSet)
 router.register(r'subatributos', views.SubatributoViewSet)
 router.register(r'documentos-criterio', views.DocumentoCriterioViewSet)
 router.register(r'escenarios', EscenarioViewSet, basename='escenario')
+router.register(r'tipos-dimension', views.TipoDimensionViewSet, basename='tipos-dimension')
 router.register(r'omoe', views.OmoeViewSet)
 router.register(r'misiones', views.MisionViewSet)
 router.register(r'grupos-afinidad', views.GrupoAfinidadViewSet)
@@ -41,6 +43,7 @@ urlpatterns = [
     path('auth/logout/', logout_view, name='auth-logout'),
     path('auth/refresh/', SecureTokenRefreshView.as_view(), name='auth-refresh'),
     path('auth/me/', me_view, name='auth-me'),
+    path('auth/profile/', profile_view, name='auth-profile'),
     path('auth/change-password/', change_password_view, name='auth-change-password'),
     path(
         'auth/proyectos/<int:proyecto_id>/membership/',

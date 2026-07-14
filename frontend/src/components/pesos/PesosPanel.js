@@ -3,6 +3,7 @@ import { escenarios, omoeApi } from '../../api';
 import SplitColumnLayout from '../../layout/SplitColumnLayout';
 import EscenariosListSidebar from './EscenariosListSidebar';
 import EscenarioFormPanel from './EscenarioFormPanel';
+import { usesEscenarioPesos } from '../criterios/escenarioAgregacionConstants';
 
 function PesosPanel({ proyectoId }) {
   const [escenariosList, setEscenariosList] = useState([]);
@@ -45,9 +46,20 @@ function PesosPanel({ proyectoId }) {
     return escenariosList.filter((e) => String(e.omoe) === String(filterOmoeId));
   }, [escenariosList, filterOmoeId]);
 
+  const filterDimension = useMemo(
+    () => dimensiones.find((d) => String(d.id) === String(filterOmoeId)),
+    [dimensiones, filterOmoeId],
+  );
+
+  const showPesoSummary = filterOmoeId
+    ? usesEscenarioPesos(filterDimension?.escenario_agregacion)
+    : false;
+
   const pesoTotalFiltrado = useMemo(() => (
-    filteredEscenarios.reduce((sum, e) => sum + Number(e.peso || 0), 0)
-  ), [filteredEscenarios]);
+    showPesoSummary
+      ? filteredEscenarios.reduce((sum, e) => sum + Number(e.peso || 0), 0)
+      : null
+  ), [filteredEscenarios, showPesoSummary]);
 
   const handleNew = () => {
     setIsNew(true);
@@ -117,7 +129,8 @@ function PesosPanel({ proyectoId }) {
             dimensiones={dimensiones}
             filterOmoeId={filterOmoeId}
             onFilterOmoeChange={setFilterOmoeId}
-            pesoTotal={filterOmoeId ? pesoTotalFiltrado : null}
+            pesoTotal={pesoTotalFiltrado}
+            showPesoSummary={showPesoSummary}
             selectedId={selectedId}
             isNew={isNew}
             onSelect={handleSelect}

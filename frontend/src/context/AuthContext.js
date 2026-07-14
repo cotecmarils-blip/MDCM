@@ -25,6 +25,8 @@ export function AuthProvider({ children }) {
   });
   const [esAdminGlobal, setEsAdminGlobal] = useState(false);
   const [puedeCrearProyecto, setPuedeCrearProyecto] = useState(false);
+  const [puedeGestionarUsuarios, setPuedeGestionarUsuarios] = useState(false);
+  const [proyectosAdministrables, setProyectosAdministrables] = useState([]);
   const [proyectosAcceso, setProyectosAcceso] = useState([]);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
@@ -43,6 +45,8 @@ export function AuthProvider({ children }) {
     setUser(null);
     setEsAdminGlobal(false);
     setPuedeCrearProyecto(false);
+    setPuedeGestionarUsuarios(false);
+    setProyectosAdministrables([]);
     setProyectosAcceso([]);
   }, []);
 
@@ -67,6 +71,8 @@ export function AuthProvider({ children }) {
       setUser(data.user);
       setEsAdminGlobal(Boolean(data.es_admin_global));
       setPuedeCrearProyecto(Boolean(data.puede_crear_proyecto));
+      setPuedeGestionarUsuarios(Boolean(data.puede_gestionar_usuarios));
+      setProyectosAdministrables(data.proyectos_administrables || []);
       setProyectosAcceso(data.proyectos || []);
       sessionStorage.setItem(STORAGE_USER, JSON.stringify(data.user));
       setAuthError(null);
@@ -75,6 +81,7 @@ export function AuthProvider({ children }) {
         proyectos: data.proyectos || [],
         puedeCrearProyecto: Boolean(data.puede_crear_proyecto),
         esAdminGlobal: Boolean(data.es_admin_global),
+        puedeGestionarUsuarios: Boolean(data.puede_gestionar_usuarios),
       };
     } catch (err) {
       if (isAccessDeniedResponse(err.response)) {
@@ -108,6 +115,8 @@ export function AuthProvider({ children }) {
     setProyectosAcceso(me.data.proyectos || []);
     setEsAdminGlobal(Boolean(me.data.es_admin_global));
     setPuedeCrearProyecto(Boolean(me.data.puede_crear_proyecto));
+    setPuedeGestionarUsuarios(Boolean(me.data.puede_gestionar_usuarios));
+    setProyectosAdministrables(me.data.proyectos_administrables || []);
     setAuthError(null);
     return data;
   }, [persistSession]);
@@ -129,6 +138,8 @@ export function AuthProvider({ children }) {
       user,
       esAdminGlobal,
       puedeCrearProyecto,
+      puedeGestionarUsuarios,
+      proyectosAdministrables,
       proyectosAcceso,
       loading,
       authError,
@@ -138,7 +149,7 @@ export function AuthProvider({ children }) {
       refreshProfile,
       clearAuthError: () => setAuthError(null),
     }),
-    [user, esAdminGlobal, puedeCrearProyecto, proyectosAcceso, loading, authError, login, logout, refreshProfile],
+    [user, esAdminGlobal, puedeCrearProyecto, puedeGestionarUsuarios, proyectosAdministrables, proyectosAcceso, loading, authError, login, logout, refreshProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

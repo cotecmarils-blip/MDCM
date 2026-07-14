@@ -5,10 +5,10 @@ const NAV_ITEMS = [
   { id: 'info', label: 'Información del proyecto' },
   { id: 'alternativas', label: 'Gestión de alternativas' },
   { id: 'criterios', label: 'Árbol de dimensiones' },
+  { id: 'trazabilidad', label: 'Auditoría y sesiones' },
   { id: 'pesos', label: 'Definición de escenarios' },
   { id: 'evaluacion', label: 'Evaluación' },
   { id: 'simulaciones', label: 'Modulo de Simulaciones' },
-  { id: 'usuarios', label: 'Gestión de usuarios' },
 ];
 
 function Sidebar({
@@ -100,11 +100,23 @@ function Sidebar({
             className="block min-w-0 flex-1 lg:flex-none mx-auto lg:mx-0"
             title="Volver a proyectos"
           >
-            <img
-              src={`${process.env.PUBLIC_URL}/CotecmarLogo.png`}
-              alt="Cotecmar"
-              className="h-10 w-auto max-w-[11rem] object-contain mx-auto lg:h-9 lg:w-9 lg:max-w-none lg:sidebar-expanded:h-10 lg:sidebar-expanded:w-auto lg:sidebar-expanded:max-w-[11rem] 2xl:h-10 2xl:w-auto 2xl:max-w-[11rem] duration-200"
-            />
+            <div className="flex items-center justify-center gap-3 lg:justify-start lg:sidebar-expanded:gap-3">
+              <img
+                src={`${process.env.PUBLIC_URL}/Logo%20ENAP.svg`}
+                alt="ENAP"
+                className="hidden h-8 w-auto max-h-8 max-w-[2.75rem] object-contain brightness-0 opacity-75 dark:invert dark:opacity-85 lg:sidebar-expanded:block 2xl:block"
+              />
+              <img
+                src={`${process.env.PUBLIC_URL}/CotecmarLogo.svg`}
+                alt="Cotecmar"
+                className="h-8 w-auto max-h-8 max-w-[7.5rem] object-contain brightness-0 opacity-75 dark:invert dark:opacity-85 mx-auto lg:mx-0 duration-200"
+              />
+              <img
+                src={`${process.env.PUBLIC_URL}/Logo_CUC.png`}
+                alt="Universidad de la Costa"
+                className="hidden h-8 w-auto max-h-8 max-w-[5.5rem] object-contain brightness-0 opacity-75 dark:invert dark:opacity-85 lg:sidebar-expanded:block 2xl:block"
+              />
+            </div>
           </Link>
           <span className="w-6 shrink-0 lg:hidden" aria-hidden="true" />
         </div>

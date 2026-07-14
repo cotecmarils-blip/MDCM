@@ -1,11 +1,15 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { tiposDimensionApi } from '../../api';
 import { CRITERIO_LEVELS } from './constants';
 import MopCriterioFields from './MopCriterioFields';
 import TerminalEvaluacionFields from './TerminalEvaluacionFields';
 import CalculationMethodSelector from './CalculationMethodSelector';
+import DimensionEvalConfigFields from './DimensionEvalConfigFields';
 import { getSchemaForLevel, showUtilidadFields, siblingPesoResumen } from './nodeFormSchemas';
 import { defaultMopCriterioFields } from './mopCriterioOptions';
 import { RAMA_MOP_PRESETS } from './ramaContext';
+import { DIMENSION_RAMA_OPTIONS } from './ramaEvaluacionOptions';
+import { defaultsForRama } from './escenarioAgregacionConstants';
 
 const NAME_FIELDS = new Set([
   'nombre',
@@ -151,21 +155,53 @@ function CriterioDynamicForm({
   compact = false,
   omitPesoEvaluacion = false,
 }) {
-  const schema = getSchemaForLevel(level, item, formData);
-  const showUtilidad =
-    !omitPesoEvaluacion && showUtilidadFields(level, item, formData);
+  const [tipoOptions, setTipoOptions] = useState(DIMENSION_RAMA_OPTIONS);
+  const [tiposByCodigo, setTiposByCodigo] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    tiposDimensionApi.list()
+      .then((res) => {
+        if (cancelled) return;
+        const items = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        if (!items.length) return;
+        setTipoOptions(items.map((t) => ({ value: t.codigo, label: t.nombre })));
+        setTiposByCodigo(Object.fromEntries(items.map((t) => [t.codigo, t])));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const schema = useMemo(
+    () => getSchemaForLevel(level, item, formData, { tipoOptions }),
+    [level, item, formData, tipoOptions],
+  );
+  const showUtilidad = showUtilidadFields(level, item, formData);
   // El modo (certeza/incertidumbre) y su configuración viven en la Información del
   // nodo terminal (OMOE u nodo del árbol) y aplican a todos los escenarios.
   const isTreeTerminalLevel =
     level === CRITERIO_LEVELS.NODO_ARBOL || level === CRITERIO_LEVELS.OMOE;
   const showTerminalEval =
-    isTreeTerminalLevel && showUtilidadFields(level, item, formData);
+    isTreeTerminalLevel && showUtilidad;
   const canToggleEvaluable =
     (level === CRITERIO_LEVELS.NODO_ARBOL && !item?.hijos?.length)
     || (level === CRITERIO_LEVELS.OMOE && !item?.nodos?.length);
   const evaluableEsDimension = level === CRITERIO_LEVELS.OMOE;
+  const deferExpertFields = omitPesoEvaluacion || isCreate;
+  const showExpertEvalToggle =
+    deferExpertFields && !isCreate && canToggleEvaluable;
 
   const handleField = (name, value) => {
+    if (name === 'rama_evaluacion' && level === CRITERIO_LEVELS.OMOE) {
+      const defs = defaultsForRama(value, tiposByCodigo[value]);
+      onChange({
+        ...formData,
+        [name]: value,
+        escenario_agregacion: defs.escenario_agregacion,
+        modo_valor_terminal: defs.modo_valor_terminal,
+      });
+      return;
+    }
     onChange({ ...formData, [name]: value });
   };
 
@@ -207,7 +243,7 @@ function CriterioDynamicForm({
   const restSchema = schema.filter((f) => !DEFERRED_FROM_SCHEMA.has(f.name));
 
   const hasPesoSection =
-    !omitPesoEvaluacion &&
+    !deferExpertFields &&
     (prioritySchema.length > 0 || showUtilidad || canToggleEvaluable);
 
   const pesoResumen = siblingPesoResumen(siblings, item, formData.peso);
@@ -331,6 +367,59 @@ function CriterioDynamicForm({
     />
   );
 
+  const expertEvalToggleBlock = showExpertEvalToggle && (
+    <section
+      className={`rounded-xl border border-dashed border-navy-500/30 bg-navy-500/[0.04] ${
+        compact ? 'p-3 space-y-2' : 'p-4 space-y-3'
+      }`}
+    >
+      <div>
+        <h4 className={`font-semibold text-navy-700 dark:text-navy-300 ${compact ? 'text-xs' : 'text-sm'}`}>
+          Configuración avanzada (sesión con expertos)
+        </h4>
+        {!compact && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Las funciones de utilidad y los pesos no son obligatorias al crear la estructura.
+            Actívelo cuando el equipo de expertos defina ecuaciones y constantes; los pesos se
+            ajustan en <strong>Definición de escenarios</strong>.
+          </p>
+        )}
+      </div>
+      {!disabled && (
+        <label className={`flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer rounded-lg border border-navy-500/20 bg-white/60 dark:bg-navy-900/40 ${compact ? 'p-2' : 'p-3'}`}>
+          <input
+            type="checkbox"
+            checked={Boolean(formData.es_nodo_evaluable)}
+            onChange={(e) => handleEvaluableToggle(e.target.checked)}
+            className="mt-0.5 rounded border-gray-300"
+          />
+          <span>
+            <span className="font-medium block">
+              {evaluableEsDimension
+                ? 'Dimensión evaluable sin hijos'
+                : 'Configurar función de valor marginal'}
+            </span>
+            {!compact && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {evaluableEsDimension
+                  ? 'Solo si la dimensión se evalúa directamente, sin nodos hijos.'
+                  : 'Define tipo de criterio, familia de funciones y parámetros (L, U, k…).'}
+              </span>
+            )}
+          </span>
+        </label>
+      )}
+      {terminalEvalBlock}
+    </section>
+  );
+
+  const createStructureHint = isCreate && isTreeTerminalLevel && (
+    <p className="text-xs text-gray-500 dark:text-gray-400 rounded-lg bg-gray-50 dark:bg-navy-900/40 px-3 py-2">
+      Solo se requiere el nombre para crear el nodo. Las funciones de utilidad y los pesos se
+      configuran en sesiones posteriores con expertos.
+    </p>
+  );
+
   return (
     <div className={compact ? 'space-y-3' : 'space-y-5'}>
       {parentLabel && (
@@ -341,28 +430,61 @@ function CriterioDynamicForm({
 
       {compact ? (
         <>
+          {createStructureHint}
           {nameBlock}
           {pesoBlock}
-          {terminalEvalBlock}
+          {expertEvalToggleBlock}
+          {!showExpertEvalToggle && terminalEvalBlock}
         </>
       ) : (
         <>
+          {createStructureHint}
           {pesoBlock}
-          {terminalEvalBlock}
+          {expertEvalToggleBlock}
+          {!showExpertEvalToggle && terminalEvalBlock}
           {nameBlock}
         </>
       )}
 
       {level === CRITERIO_LEVELS.OMOE && (
-        <CalculationMethodSelector
-          calculationMethod={formData.calculation_method}
-          calculationConfig={formData.calculation_config}
-          disabled={disabled}
-          inputClass={inputClass}
-          omoeId={omoeId}
-          proyectoId={proyectoId}
-          onChange={(calcFields) => onChange({ ...formData, ...calcFields })}
-        />
+        <details className="group rounded-xl border border-dashed border-gray-300 dark:border-gray-600/70 bg-gray-50/40 dark:bg-navy-900/20">
+          <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between gap-3 select-none">
+            <div>
+              <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                Configuración avanzada
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Agregación de escenarios, valor terminal y método de cálculo de la dimensión.
+              </p>
+            </div>
+            <span className="shrink-0 text-xs font-medium text-navy-600 dark:text-navy-300 group-open:hidden">
+              Mostrar
+            </span>
+            <span className="shrink-0 text-xs font-medium text-navy-600 dark:text-navy-300 hidden group-open:inline">
+              Ocultar
+            </span>
+          </summary>
+          <div className="px-4 pb-4 pt-1 space-y-4 border-t border-gray-200/80 dark:border-gray-700/60">
+            <DimensionEvalConfigFields
+              ramaEvaluacion={formData.rama_evaluacion}
+              tipoMeta={tiposByCodigo[formData.rama_evaluacion]}
+              escenarioAgregacion={formData.escenario_agregacion}
+              modoValorTerminal={formData.modo_valor_terminal}
+              disabled={disabled}
+              onChange={(patch) => onChange({ ...formData, ...patch })}
+            />
+            <CalculationMethodSelector
+              calculationMethod={formData.calculation_method}
+              calculationConfig={formData.calculation_config}
+              disabled={disabled}
+              inputClass={inputClass}
+              omoeId={omoeId}
+              proyectoId={proyectoId}
+              escenarioAgregacion={formData.escenario_agregacion}
+              onChange={(calcFields) => onChange({ ...formData, ...calcFields })}
+            />
+          </div>
+        </details>
       )}
 
       {restSchema.length > 0 && (

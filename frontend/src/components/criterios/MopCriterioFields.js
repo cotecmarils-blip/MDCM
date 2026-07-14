@@ -11,6 +11,7 @@ import { defaultParametrosForFamilia } from './mopFuncionParams';
 import MopFuncionParamFields from './MopFuncionParamFields';
 import MopOptionCardPicker from './MopOptionCardPicker';
 import MopOptionCard from './MopOptionCard';
+import UtilidadCurveChart from './UtilidadCurveChart';
 
 function MopCriterioFields({
   tipoCriterio,
@@ -68,6 +69,11 @@ function MopCriterioFields({
             selected
             label={getFamiliaLabel(tipoCriterio, familiaFunciones)}
             latex={familiaMeta.latex}
+            curvePreview={{
+              familia: familiaFunciones,
+              params: parametrosFuncion || {},
+              tipoCriterio,
+            }}
             disabled
           />
         </div>
@@ -110,10 +116,28 @@ function MopCriterioFields({
         value={familiaFunciones}
         onChange={handleFamiliaChange}
         getMeta={(value) => getFamiliaFormula(value)}
+        getCurvePreview={(familia) => ({
+          familia,
+          params: familia === familiaFunciones
+            ? (parametrosFuncion || defaultParametrosForFamilia(familia))
+            : defaultParametrosForFamilia(familia),
+          tipoCriterio,
+        })}
         compact
         disabled={!familias.length}
         required
       />
+
+      {familiaFunciones && (
+        <UtilidadCurveChart
+          familia={familiaFunciones}
+          params={parametrosFuncion || {}}
+          tipoCriterio={tipoCriterio}
+          compact={false}
+          showLabel
+          className="rounded-lg border border-gray-100 dark:border-navy-800 bg-gray-50/80 dark:bg-navy-900/40 p-2"
+        />
+      )}
 
       <MopFuncionParamFields
         familia={familiaFunciones}

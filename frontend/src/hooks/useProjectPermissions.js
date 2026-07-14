@@ -61,12 +61,8 @@ export function useProjectPermissions(proyectoId) {
       return ['info', 'alternativas'].includes(sectionId);
     }
 
-    if (sectionId === 'usuarios') {
-      return permissions.puede_gestionar_miembros;
-    }
-
     if (rol === 'auditor') {
-      return sectionId !== 'usuarios';
+      return true;
     }
 
     return true;
@@ -83,7 +79,6 @@ export function useProjectPermissions(proyectoId) {
     error,
     canWrite,
     canCreateAlternativa,
-    canManageMembers: permissions.puede_gestionar_miembros,
     canDeleteProject: Boolean(
       permissions.es_admin_global || permissions.puede_eliminar_proyecto,
     ),

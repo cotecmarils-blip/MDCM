@@ -2,8 +2,24 @@ import { MEDIA_BASE_URL } from '../api';
 
 export function resolveMediaUrl(url) {
   if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${MEDIA_BASE_URL}${url}`;
+
+  let resolved;
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    resolved = url;
+  } else {
+    const path = url.startsWith('/') ? url : `/${url}`;
+    resolved = `${MEDIA_BASE_URL}${path}`;
+  }
+
+  if (
+    typeof window !== 'undefined'
+    && window.location.protocol === 'https:'
+    && resolved.startsWith('http://')
+  ) {
+    resolved = `https://${resolved.slice(7)}`;
+  }
+
+  return resolved;
 }
 
 /** Extrae el nombre de archivo desde una ruta o URL de media. */

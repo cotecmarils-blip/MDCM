@@ -1,7 +1,7 @@
 import { CRITERIO_LEVELS, CHILDREN_KEY, CHILD_LEVEL, MODELO_LABEL, getNodoTipoLabel } from './constants';
 import { effectiveOmoeRama } from './ramaContext';
-import { isTerminalCriterioNode, showUtilidadFields } from './terminalUtils';
-import { buildDefaultFormValues, validateNodeForm } from './nodeFormSchemas';
+import { isTerminalCriterioNode } from './terminalUtils';
+import { buildDefaultFormValues, getSchemaForLevel, validateUtilidadParams } from './nodeFormSchemas';
 
 export const MAP_NODE_W = 26;
 export const MAP_NODE_H = 26;
@@ -78,16 +78,42 @@ export function paramsSummary(node) {
   return parts.length ? parts.join(' · ') : null;
 }
 
-export function hasNodePendingData(level, node) {
-  if (!node) return false;
-  const formData = buildDefaultFormValues(level, node);
-  if (validateNodeForm(level, formData, node).length > 0) return true;
+function hasRequiredSchemaGap(level, node, formData) {
+  const schema = getSchemaForLevel(level, node, formData);
+  return schema.some((field) => {
+    if (!field.required || field.type === 'boolean') return false;
+    const val = formData[field.name];
+    return val == null || String(val).trim() === '';
+  });
+}
 
-  if (isTerminalCriterioNode(level, node) && showUtilidadFields(level, node, formData)) {
-    const tipo = node.tipo_criterio || node.tipo_mop || '';
-    const familia = node.familia_funciones || '';
-    if (!tipo || !familia) return true;
+/** Nodo con datos pendientes (mapa naranja): nombre, utilidad incompleta o peso sin asignar. */
+export function hasNodePendingData(level, node, omoe = null) {
+  if (!node || node.aplica === false) return false;
+
+  const formData = buildDefaultFormValues(level, node);
+  if (hasRequiredSchemaGap(level, node, formData)) return true;
+
+  if (!isTerminalCriterioNode(level, node)) return false;
+
+  const modo = node.modo_evaluacion || formData.modo_evaluacion || 'certeza';
+  if (modo === 'incertidumbre') return false;
+
+  const modoValor = omoe?.modo_valor_terminal || 'utilidad';
+  // Costos (OMOC): solo valor bruto x — no exigir función de utilidad ni peso.
+  if (modoValor === 'valor_bruto') {
+    return false;
   }
+
+  const tipo = node.tipo_criterio || node.tipo_mop || '';
+  const familia = node.familia_funciones || '';
+  if (!tipo || !familia) return true;
+
+  const params = node.parametros_funcion || formData.parametros_funcion || {};
+  if (validateUtilidadParams(familia, params).length > 0) return true;
+
+  const peso = node.peso;
+  if (peso === null || peso === undefined || peso === '') return true;
 
   return false;
 }
@@ -103,7 +129,7 @@ function buildMeta(level, node, omoe) {
     rama: level === CRITERIO_LEVELS.OMOE ? effectiveOmoeRama(node) : null,
     levelLabel: levelLabelFor(level, node),
     hasPending:
-      node.aplica !== false && hasNodePendingData(level, node),
+      node.aplica !== false && hasNodePendingData(level, node, omoe),
     isTerminal: isTerminalCriterioNode(level, node),
     children: [],
   };

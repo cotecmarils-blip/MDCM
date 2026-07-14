@@ -7,6 +7,7 @@ function MopOptionCardPicker({
   value,
   onChange,
   getMeta,
+  getCurvePreview,
   disabled = false,
   compact = false,
   name,
@@ -30,6 +31,7 @@ function MopOptionCardPicker({
       >
         {options.map((opt) => {
           const meta = getMeta ? getMeta(opt.value) : {};
+          const curvePreview = getCurvePreview ? getCurvePreview(opt.value) : null;
           return (
             <MopOptionCard
               key={opt.value}
@@ -37,6 +39,7 @@ function MopOptionCardPicker({
               selected={value === opt.value}
               label={opt.label}
               latex={meta.latex}
+              curvePreview={curvePreview}
               disabled={disabled}
               onSelect={() => onChange(opt.value)}
             />

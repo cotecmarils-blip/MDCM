@@ -1,4 +1,5 @@
 import { RAMA_EVALUACION_SHORT } from '../criterios/ramaEvaluacionOptions';
+import { usesEscenarioPesos } from '../criterios/escenarioAgregacionConstants';
 
 function EscenariosListSidebar({
   items,
@@ -6,12 +7,18 @@ function EscenariosListSidebar({
   filterOmoeId = '',
   onFilterOmoeChange,
   pesoTotal = null,
+  showPesoSummary = true,
   selectedId,
   isNew,
   onSelect,
   onNew,
   loading,
 }) {
+  const agregacionByOmoe = Object.fromEntries(
+    dimensiones.map((d) => [String(d.id), d.escenario_agregacion]),
+  );
+
+  const itemUsesPeso = (item) => usesEscenarioPesos(agregacionByOmoe[String(item.omoe)]);
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -40,7 +47,7 @@ function EscenariosListSidebar({
             ))}
           </select>
         )}
-        {filterOmoeId && pesoTotal != null && (
+        {filterOmoeId && showPesoSummary && pesoTotal != null && (
           <p
             className={`text-xs ${
               Math.abs(pesoTotal - 100) <= 0.05
@@ -79,7 +86,9 @@ function EscenariosListSidebar({
                       {item.rama_evaluacion
                         ? RAMA_EVALUACION_SHORT[item.rama_evaluacion] || item.rama_evaluacion
                         : ''}
-                      {item.peso != null && item.peso !== '' ? ` · ${item.peso}%` : ''}
+                      {itemUsesPeso(item) && item.peso != null && item.peso !== ''
+                        ? ` · ${item.peso}%`
+                        : ''}
                     </span>
                   </button>
                 </li>

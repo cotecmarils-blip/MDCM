@@ -9,8 +9,8 @@ import CriteriosPanel from './components/criterios/CriteriosPanel';
 import PesosPanel from './components/pesos/PesosPanel';
 import EvaluacionPanel from './components/evaluacion/EvaluacionPanel';
 import SimulacionesPanel from './components/simulaciones/SimulacionesPanel';
+import AuditoriaEventosPanel from './components/trazabilidad/AuditoriaEventosPanel';
 import SensitivityPanel from './components/sensibilidad/SensitivityPanel';
-import UsuariosPanel from './components/usuarios/UsuariosPanel';
 import { useProjectPermissions } from './hooks/useProjectPermissions';
 
 const ROL_LABELS = {
@@ -22,12 +22,12 @@ const ROL_LABELS = {
   auditor: 'Auditor',
 };
 
-const ALL_SECTIONS = ['info', 'alternativas', 'criterios', 'pesos', 'evaluacion', 'simulaciones', 'sensibilidad', 'usuarios'];
+const ALL_SECTIONS = ['info', 'alternativas', 'criterios', 'trazabilidad', 'pesos', 'evaluacion', 'simulaciones', 'sensibilidad'];
 
 function ProjectDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { permissions, loading: permLoading, error: permError, canWrite, canAccessSection, canManageMembers } =
+  const { permissions, loading: permLoading, error: permError, canWrite, canAccessSection } =
     useProjectPermissions(id);
   const [proyecto, setProyecto] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -74,6 +74,8 @@ function ProjectDetailPage() {
         );
       case 'criterios':
         return <CriteriosPanel proyectoId={id} />;
+      case 'trazabilidad':
+        return <AuditoriaEventosPanel proyectoId={id} canWrite={canWrite} />;
       case 'pesos':
         return <PesosPanel proyectoId={id} />;
       case 'evaluacion':
@@ -82,10 +84,6 @@ function ProjectDetailPage() {
         return <SimulacionesPanel proyectoId={id} canWrite={canWrite} />;
       case 'sensibilidad':
         return <SensitivityPanel proyectoId={id} />;
-      case 'usuarios':
-        return (
-          <UsuariosPanel proyectoId={id} canManage={canManageMembers} />
-        );
       default:
         return null;
     }

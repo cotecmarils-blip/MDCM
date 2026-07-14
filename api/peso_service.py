@@ -208,6 +208,14 @@ def after_escenario_saved(escenario: Escenario, *, created: bool = False):
 
 
 def validate_escenarios_peso_omoe(omoe_id: int):
+    from .escenario_agregacion_choices import ESCENARIO_AGREG_COMPENSATORIO
+    from .models import Omoe
+
+    omoe = Omoe.objects.filter(pk=omoe_id).only('escenario_agregacion').first()
+    if omoe:
+        agreg = getattr(omoe, 'escenario_agregacion', None) or ESCENARIO_AGREG_COMPENSATORIO
+        if agreg != ESCENARIO_AGREG_COMPENSATORIO:
+            return
     items = list(Escenario.objects.filter(omoe_id=omoe_id))
     if not items:
         return

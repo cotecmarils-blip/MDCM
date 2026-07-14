@@ -1,6 +1,7 @@
 """Pipeline Pareto → normalización → pesos → ranking MADM."""
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from django.core.exceptions import ValidationError
@@ -10,7 +11,7 @@ from decimal import Decimal
 from .madm_choices import rama_to_direction
 from .madm_ranker import MADMRanker, MatrixOrientation, WeightCalculator
 from .matrix_normalizer import NonDominatedNormalizer
-from .pareto_solver import ParetoSolver
+from .pareto_solver import DEFAULT_PARETO_EPSILON, ParetoSolver
 
 
 def _parse_direction_value(value: str | None, default: str = 'max') -> str:
@@ -77,6 +78,25 @@ def directions_by_dimension_name(
 PESO_DIM_TOTAL = Decimal('100')
 PESO_DIM_TOLERANCE = Decimal('0.05')
 
+PARETO_EPSILON_VALIDATION_MSG = (
+    'Ingrese un valor de epsilon válido, mayor o igual que cero.'
+)
+
+
+def parse_pareto_epsilon(raw) -> float:
+    """Tolerancia numérica para comparaciones Pareto (opcional en opciones)."""
+    if raw is None:
+        return DEFAULT_PARETO_EPSILON
+    if isinstance(raw, str) and raw.strip() == '':
+        return DEFAULT_PARETO_EPSILON
+    try:
+        val = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(PARETO_EPSILON_VALIDATION_MSG) from exc
+    if not math.isfinite(val) or val < 0:
+        raise ValidationError(PARETO_EPSILON_VALIDATION_MSG)
+    return val
+
 
 def _parse_pesos_usuario_percent(raw, n_dims: int) -> list[float]:
     if not isinstance(raw, (list, tuple)) or len(raw) != n_dims:
@@ -115,7 +135,7 @@ def _parse_opciones(
         dims_norm = list(dimension_names)
     if not dims_norm:
         raise ValidationError(
-            'Debe seleccionar al menos una dimensión para normalizar.'
+            'Debe seleccionar al menos una dimensión para el cálculo.'
         )
     metodo_norm = (opts.get('normalizacion_metodo') or '').strip()
     if not metodo_norm:
@@ -132,6 +152,7 @@ def _parse_opciones(
     pesos_usuario = opts.get('pesos_usuario')
     if metodo_pesos == 'user_defined_weights':
         pesos_usuario = _parse_pesos_usuario_percent(pesos_usuario, len(dimension_names))
+    pareto_epsilon = parse_pareto_epsilon(opts.get('pareto_epsilon'))
     return {
         'aplicar_pareto': bool(opts.get('aplicar_pareto', False)),
         'dimensiones_normalizar': [str(d) for d in dims_norm],
@@ -145,7 +166,53 @@ def _parse_opciones(
         'metodo_pesos': metodo_pesos,
         'metodo_madm': metodo_madm,
         'pesos_usuario': pesos_usuario,
+        'pareto_epsilon': pareto_epsilon,
     }
+
+
+def filter_dimensiones_meta(
+    dimensiones_meta: list[dict[str, Any]],
+    opciones: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Restringe el cálculo MADM a las dimensiones elegidas por el usuario."""
+    if not dimensiones_meta:
+        return []
+    opts = opciones or {}
+    selected = opts.get('dimensiones_normalizar')
+    if selected is None:
+        return list(dimensiones_meta)
+    if not selected:
+        raise ValidationError(
+            'Debe seleccionar al menos una dimensión para el cálculo.'
+        )
+    names = {str(s) for s in selected}
+    filtered = [m for m in dimensiones_meta if m['nombre'] in names]
+    if not filtered:
+        raise ValidationError(
+            'Ninguna de las dimensiones seleccionadas coincide con las del proyecto.'
+        )
+    return filtered
+
+
+def filter_rollups_by_dimensions(
+    alternativas_rollups: list[dict[str, Any]],
+    dimensiones_meta: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Recorta dimensiones en cada alternativa y recalcula el promedio global."""
+    if not dimensiones_meta:
+        return alternativas_rollups
+    selected_ids = {m['omoe_id'] for m in dimensiones_meta}
+    out: list[dict[str, Any]] = []
+    for alt in alternativas_rollups:
+        dims = [
+            d for d in alt.get('dimensiones', [])
+            if d.get('omoe_id') in selected_ids
+        ]
+        scores = [float(d['valor']) for d in dims if d.get('valor') is not None]
+        gv = sum(scores) / len(scores) if scores else 0.0
+        alt_copy = {**alt, 'dimensiones': dims, 'valor_global': round(gv, 6)}
+        out.append(alt_copy)
+    return out
 
 
 def build_matrix_from_rollups(
@@ -154,8 +221,9 @@ def build_matrix_from_rollups(
     opciones: dict[str, Any] | None = None,
 ) -> tuple[list[list[float]], list[str], list[str], list[str]]:
     """Matriz n×m, nombres de alternativa, dimensión y dirección por columna."""
-    dim_names = [d['nombre'] for d in dimensiones_meta]
-    directions = resolve_directions(dimensiones_meta, opciones)
+    active_meta = filter_dimensiones_meta(dimensiones_meta, opciones)
+    dim_names = [d['nombre'] for d in active_meta]
+    directions = resolve_directions(active_meta, opciones)
     alt_names: list[str] = []
     matrix: list[list[float]] = []
 
@@ -163,7 +231,7 @@ def build_matrix_from_rollups(
         alt_names.append(alt['nombre'])
         by_id = {d['omoe_id']: d['valor'] for d in alt.get('dimensiones', [])}
         row = []
-        for meta in dimensiones_meta:
+        for meta in active_meta:
             val = by_id.get(meta['omoe_id'])
             if val is None:
                 raise ValidationError(
@@ -192,7 +260,10 @@ def run_madm_pipeline(
     parsed = _parse_opciones(
         opciones,
         dimensions,
-        dimensiones_meta=dimensiones_meta,
+        dimensiones_meta=filter_dimensiones_meta(
+            dimensiones_meta or [],
+            opciones,
+        ) if dimensiones_meta else None,
     )
     directions = parsed.get('direcciones') or directions
     all_indices = list(range(len(alternatives)))
@@ -206,6 +277,7 @@ def run_madm_pipeline(
             dimensions=dimensions,
             directions=directions,
             alternatives=alternatives,
+            epsilon=parsed['pareto_epsilon'],
         ).solve()
         pareto_indices = pareto_result.pareto_indices
         if not pareto_indices:
@@ -330,11 +402,13 @@ def preview_madm_pipeline(
 
     if opts.get('aplicar_pareto'):
         try:
+            pareto_epsilon = parse_pareto_epsilon(opts.get('pareto_epsilon'))
             pareto_result = ParetoSolver(
                 matrix=matrix,
                 dimensions=dimensions,
                 directions=directions,
                 alternatives=alternatives,
+                epsilon=pareto_epsilon,
             ).solve()
             pareto_indices = pareto_result.pareto_indices
             filtered_matrix = [matrix[i] for i in pareto_indices]

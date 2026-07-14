@@ -11,6 +11,8 @@ from typing import Any, Callable, Sequence
 import numpy as np
 import numpy.typing as npt
 
+DEFAULT_PARETO_EPSILON = 1e-12
+
 
 class Direction(str, Enum):
     MIN = "min"
@@ -143,7 +145,7 @@ class ParetoSolver:
         directions: Sequence[str | Direction],
         alternatives: Sequence[str],
         *,
-        epsilon: float = 1e-12,
+        epsilon: float = DEFAULT_PARETO_EPSILON,
     ) -> None:
         self._raw_matrix = np.asarray(matrix, dtype=np.float64)
         self._dimensions = list(dimensions)

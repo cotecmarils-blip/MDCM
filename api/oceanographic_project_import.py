@@ -23,6 +23,10 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from .arbol_nivel_service import ensure_niveles_arbol, get_nivel_por_orden
+from .escenario_agregacion_choices import (
+    ESCENARIO_AGREG_COMPENSATORIO,
+    ESCENARIO_AGREG_MINIMO_MEJOR,
+)
 from .evaluacion_rama_choices import RAMA_OMOC, RAMA_OMOE, RAMA_OMOR
 from .evaluacion_service import import_alternativas_from_json
 from .models import (
@@ -33,6 +37,7 @@ from .models import (
     ProyectoMembership,
     ProyectoNivelArbol,
 )
+from .modo_valor_terminal_choices import MODO_VALOR_BRUTO, MODO_VALOR_UTILIDAD
 from .nodo_escenario_service import seed_arbol_config_for_escenario
 from .oceanographic_import import _pydecision_uf_to_MCDM
 from .peso_service import _q2
@@ -292,6 +297,7 @@ def import_oceanographic_project(
             ensure_niveles_arbol(proyecto, rama)
             _rename_niveles(proyecto, rama)
 
+            # OMOC (costos): valor bruto + mínimo-mejor (sin pesos entre escenarios).
             omoe = Omoe.objects.create(
                 proyecto=proyecto,
                 nombre_modelo=nombre,
@@ -302,6 +308,14 @@ def import_oceanographic_project(
                 ),
                 rama_evaluacion=rama,
                 orden=orden,
+                modo_valor_terminal=(
+                    MODO_VALOR_BRUTO if rama == RAMA_OMOC else MODO_VALOR_UTILIDAD
+                ),
+                escenario_agregacion=(
+                    ESCENARIO_AGREG_MINIMO_MEJOR
+                    if rama == RAMA_OMOC
+                    else ESCENARIO_AGREG_COMPENSATORIO
+                ),
             )
 
             stats = {'nodos': 0, 'hojas': 0}

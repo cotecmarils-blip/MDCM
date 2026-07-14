@@ -1,9 +1,9 @@
-"""Configuración flexible de niveles del árbol por proyecto y rama (OMOE/OMOC/OMOR)."""
+"""Configuración flexible de niveles del árbol por proyecto y rama/tipo de dimensión."""
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 
-from .evaluacion_rama_choices import RAMAS_DIMENSION, RAMA_OMOE
+from .evaluacion_rama_choices import RAMA_OMOE
 from .models import NodoArbol, Proyecto, ProyectoNivelArbol
 
 DEFAULT_NIVELES = (
@@ -25,9 +25,19 @@ NUM_NIVELES_ARBOL = MAX_NIVELES_ARBOL
 
 
 def _normalize_rama(rama: str | None) -> str:
-    if rama in RAMAS_DIMENSION:
-        return rama
-    return RAMA_OMOE
+    rama = (rama or '').strip().lower()
+    if not rama or rama == 'auto':
+        return RAMA_OMOE
+    return rama
+
+
+def _ramas_catalogo() -> list[str]:
+    from .tipo_dimension_service import codigos_tipos_activos
+    try:
+        return codigos_tipos_activos()
+    except Exception:
+        from .evaluacion_rama_choices import RAMAS_DIMENSION
+        return list(RAMAS_DIMENSION)
 
 
 def _default_nombre(orden: int) -> str:
@@ -46,7 +56,7 @@ def ensure_niveles_arbol(
     proyecto: Proyecto,
     rama: str | None = None,
 ) -> list[ProyectoNivelArbol]:
-    """Crea la plantilla inicial de niveles para una rama si aún no existen."""
+    """Crea la plantilla inicial de niveles para una rama/tipo si aún no existen."""
     rama = _normalize_rama(rama)
     if ProyectoNivelArbol.objects.filter(proyecto=proyecto, rama_evaluacion=rama).exists():
         return list_niveles_arbol(proyecto, rama)
@@ -67,7 +77,15 @@ def ensure_niveles_arbol(
 
 
 def ensure_all_ramas_niveles(proyecto: Proyecto) -> None:
-    for rama in RAMAS_DIMENSION:
+    for rama in _ramas_catalogo():
+        ensure_niveles_arbol(proyecto, rama)
+    # También cualquier rama ya usada en el proyecto (tipos antiguos/inactivos).
+    usadas = (
+        ProyectoNivelArbol.objects.filter(proyecto=proyecto)
+        .values_list('rama_evaluacion', flat=True)
+        .distinct()
+    )
+    for rama in usadas:
         ensure_niveles_arbol(proyecto, rama)
 
 
@@ -80,7 +98,15 @@ def list_niveles_arbol(proyecto: Proyecto, rama: str | None = None) -> list[Proy
 
 def list_niveles_arbol_por_ramas(proyecto: Proyecto) -> dict[str, list[ProyectoNivelArbol]]:
     ensure_all_ramas_niveles(proyecto)
-    return {rama: list_niveles_arbol(proyecto, rama) for rama in RAMAS_DIMENSION}
+    ramas = list(dict.fromkeys(
+        list(_ramas_catalogo())
+        + list(
+            ProyectoNivelArbol.objects.filter(proyecto=proyecto)
+            .values_list('rama_evaluacion', flat=True)
+            .distinct()
+        )
+    ))
+    return {rama: list_niveles_arbol(proyecto, rama) for rama in ramas}
 
 
 def get_max_nivel_orden(proyecto_id: int, rama: str | None = None) -> int:
@@ -121,7 +147,7 @@ def get_nivel_por_codigo(
 
 def effective_rama_for_omoe(omoe) -> str:
     rama = (getattr(omoe, 'rama_evaluacion', None) or '').strip()
-    if rama in RAMAS_DIMENSION:
+    if rama and rama != 'auto':
         return rama
     return RAMA_OMOE
 

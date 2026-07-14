@@ -7,6 +7,9 @@ import ProjectDetailPage from './ProjectDetailPage';
 import DrawioViewerPage from './pages/DrawioViewerPage';
 import ProjectFormPage from './pages/ProjectFormPage';
 import LoginPage from './pages/LoginPage';
+import UsuariosGlobalPage from './pages/UsuariosGlobalPage';
+import ProfilePage from './pages/ProfilePage';
+import TiposDimensionPage from './pages/TiposDimensionPage';
 
 function App() {
   return (
@@ -24,7 +27,30 @@ function App() {
               )}
             />
             <Route
-              path="/proyecto/nuevo"
+              path="/perfil"
+              element={(
+                <ProtectedRoute>
+                  <ProfilePage />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
+              path="/tipos-dimension"
+              element={(
+                <ProtectedRoute>
+                  <TiposDimensionPage />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
+              path="/usuarios"
+              element={(
+                <ProtectedRoute>
+                  <UsuariosGlobalPage />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
               element={(
                 <ProtectedRoute>
                   <ProjectFormPage />

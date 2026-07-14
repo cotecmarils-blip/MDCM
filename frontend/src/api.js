@@ -128,6 +128,8 @@ export const authApi = {
   logout: (refresh) => api.post('/auth/logout/', { refresh }),
   me: () => api.get('/auth/me/'),
   refresh: (refresh) => api.post('/auth/refresh/', { refresh }),
+  getProfile: () => api.get('/auth/profile/'),
+  updateProfile: (data) => api.patch('/auth/profile/', data),
   changePassword: (currentPassword, newPassword) =>
     api.post('/auth/change-password/', {
       current_password: currentPassword,
@@ -135,10 +137,18 @@ export const authApi = {
     }),
   getProyectoMembership: (proyectoId) =>
     api.get(`/auth/proyectos/${proyectoId}/membership/`),
-  listMemberships: (proyectoId) =>
-    api.get(`/auth/memberships/?proyecto=${proyectoId}`),
-  searchUsers: (proyectoId, q) =>
-    api.get('/auth/users/', { params: { proyecto: proyectoId, q } }),
+  listMemberships: (proyectoId) => (
+    proyectoId
+      ? api.get(`/auth/memberships/?proyecto=${proyectoId}`)
+      : api.get('/auth/memberships/')
+  ),
+  searchUsers: (q, proyectoId) =>
+    api.get('/auth/users/', {
+      params: {
+        q,
+        ...(proyectoId ? { proyecto: proyectoId } : {}),
+      },
+    }),
   createMembership: (data) => api.post('/auth/memberships/', data),
   updateMembership: (id, data) => api.patch(`/auth/memberships/${id}/`, data),
   deleteMembership: (id) => api.delete(`/auth/memberships/${id}/`),
@@ -166,6 +176,8 @@ export const proyectos = {
       params: omoeId ? { omoe: omoeId } : {},
       responseType: 'blob',
     }),
+  catalogoDimensiones: (id) => api.get(`/proyectos/${id}/catalogo-dimensiones/`),
+  importarDimension: (id, data) => api.post(`/proyectos/${id}/importar-dimension/`, data),
   exportDiagram: (id, omoeId) =>
     api.get(`/proyectos/${id}/export/diagram/`, {
       params: omoeId ? { omoe: omoeId } : {},
@@ -341,6 +353,15 @@ export const omoeApi = {
   delete: (id) => api.delete(`/omoe/${id}/`),
 };
 
+/** Catálogo global de tipos de dimensión (extensible). */
+export const tiposDimensionApi = {
+  list: (params = {}) => api.get('/tipos-dimension/', { params }),
+  getById: (id) => api.get(`/tipos-dimension/${id}/`),
+  create: (data) => api.post('/tipos-dimension/', data),
+  update: (id, data) => api.patch(`/tipos-dimension/${id}/`, data),
+  remove: (id) => api.delete(`/tipos-dimension/${id}/`),
+};
+
 export const misionesApi = {
   getByOmoe: (omoeId) => api.get(`/misiones/?omoe=${omoeId}`),
   create: (data) => api.post('/misiones/', data),
@@ -403,6 +424,15 @@ export const vopResultadosApi = {
 
 export const evaluacionApi = {
   getSchema: (proyectoId) => api.get(`/proyectos/${proyectoId}/evaluacion/schema/`),
+  exportCurvas: (proyectoId) => api.get(`/proyectos/${proyectoId}/curvas-utilidad/`),
+  exportInformeCurvasWord: (proyectoId) =>
+    api.get(`/proyectos/${proyectoId}/informe-curvas-word/`, {
+      responseType: 'blob',
+    }),
+  exportInformeCostosWord: (proyectoId) =>
+    api.get(`/proyectos/${proyectoId}/informe-costos-word/`, {
+      responseType: 'blob',
+    }),
   getValores: (proyectoId, alternativaId) =>
     api.get(`/proyectos/${proyectoId}/evaluacion/valores/`, {
       params: { alternativa: alternativaId },
@@ -427,6 +457,48 @@ export const simulacionApi = {
     api.delete(`/proyectos/${proyectoId}/simulacion/historial/${historialId}/`),
   sensibilidad: (proyectoId, body = {}) =>
     api.post(`/proyectos/${proyectoId}/simulacion/sensibilidad/`, body),
+};
+
+export const auditoriaEventosApi = {
+  list: (proyectoId) => api.get(`/proyectos/${proyectoId}/eventos-decision/`),
+  activo: (proyectoId) =>
+    api.get(`/proyectos/${proyectoId}/eventos-decision/`, { params: { scope: 'activo' } }),
+  auditoria: (proyectoId, params = {}) =>
+    api.get(`/proyectos/${proyectoId}/eventos-decision/`, {
+      params: { scope: 'auditoria', ...params },
+    }),
+  colaboradores: (proyectoId) =>
+    api.get(`/proyectos/${proyectoId}/eventos-decision/`, {
+      params: { scope: 'colaboradores' },
+    }),
+  create: (proyectoId, body) => api.post(`/proyectos/${proyectoId}/eventos-decision/`, body),
+  get: (proyectoId, eventoId) =>
+    api.get(`/proyectos/${proyectoId}/eventos-decision/${eventoId}/`),
+  update: (proyectoId, eventoId, body) =>
+    api.put(`/proyectos/${proyectoId}/eventos-decision/${eventoId}/`, body),
+  activar: (proyectoId, eventoId) =>
+    api.post(`/proyectos/${proyectoId}/eventos-decision/${eventoId}/activar/`),
+  cerrar: (proyectoId, eventoId, body = {}) =>
+    api.post(`/proyectos/${proyectoId}/eventos-decision/${eventoId}/cerrar/`, body),
+  informe: (proyectoId, eventoId) =>
+    api.get(`/proyectos/${proyectoId}/eventos-decision/${eventoId}/`, {
+      params: { scope: 'informe' },
+    }),
+  nodosAuditoria: (proyectoId, params = {}) =>
+    api.get(`/proyectos/${proyectoId}/eventos-decision/`, {
+      params: { scope: 'nodos-auditoria', ...params },
+    }),
+  historialNodo: (proyectoId, params = {}) =>
+    api.get(`/proyectos/${proyectoId}/eventos-decision/`, {
+      params: { scope: 'historial-nodo', ...params },
+    }),
+};
+
+export const configTrazabilidadApi = {
+  get: (proyectoId, params = {}) =>
+    api.get(`/proyectos/${proyectoId}/config-trazabilidad/`, { params }),
+  registrarSesion: (proyectoId, body) =>
+    api.post(`/proyectos/${proyectoId}/config-trazabilidad/`, body),
 };
 
 export const documentosCriterio = {

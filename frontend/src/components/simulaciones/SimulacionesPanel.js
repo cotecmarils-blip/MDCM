@@ -13,14 +13,15 @@ import SimulacionExportButtons from './SimulacionExportButtons';
 import SimulacionResultadoTabs from './SimulacionResultadoTabs';
 import { useSimulacionPlotBg } from './simulacionPlotBg';
 import { validatePesosDimensionesPercent } from '../../utils/pesoUtils';
-import { createEmptyCalcConfig, buildPreviewPayload } from './simulacionWizardSteps';
+import { createEmptyCalcConfig, buildPreviewPayload, dimensionesSeleccionadas } from './simulacionWizardSteps';
+import { parseParetoEpsilonInput, PARETO_EPSILON_VALIDATION_MSG } from './paretoEpsilonUtils';
 import { MODAL_BACKDROP_CLASS } from '../../utils/modalBackdrop';
 
 const TIPO_LABELS = {
-  valor_evaluacion: 'Valor en evaluación',
+  valor_evaluacion: 'Valor en evaluaci?n',
   constante: 'Constante del criterio',
   peso: 'Peso',
-  configuracion: 'Configuración',
+  configuracion: 'Configuraci?n',
 };
 
 function SimulacionResultados({
@@ -52,7 +53,7 @@ function SimulacionResultados({
     <div className="space-y-6">
       {esHistorial && (
         <p className="text-xs text-navy-600 dark:text-navy-400 font-medium">
-          {resultado.titulo_historial || 'Cálculo guardado'}
+          {resultado.titulo_historial || 'C?lculo guardado'}
         </p>
       )}
 
@@ -93,11 +94,11 @@ function SimulacionResultados({
       ) : soloMatriz ? (
         <div>
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-1">
-            Matriz de utilidades por dimensión
+            Matriz de utilidades por dimensi?n
           </h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-            Valores agregados desde el árbol de criterios por alternativa. Este cálculo se guardó
-            sin normalización, Pareto ni ranking MADM.
+            Valores agregados desde el ?rbol de criterios por alternativa. Comparaci?n solo con
+            matriz de utilidades (sin normalizaci?n, Pareto ni ranking MADM).
           </p>
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700/60">
             <table className="min-w-full text-sm">
@@ -125,6 +126,14 @@ function SimulacionResultados({
                     {alt.dimensiones.map((d) => (
                       <td key={d.omoe_id} className="px-3 py-2 font-mono">
                         {d.valor?.toFixed(4)}
+                        {d.escenario_elegido && (
+                          <span
+                            className="block text-[10px] font-sans text-gray-400 dark:text-gray-500 truncate max-w-[8rem]"
+                            title={`Escenario: ${d.escenario_elegido}`}
+                          >
+                            «{d.escenario_elegido}»
+                          </span>
+                        )}
                       </td>
                     ))}
                     <td className="px-3 py-2 font-mono font-semibold text-navy-600">
@@ -144,10 +153,10 @@ function SimulacionResultados({
 
           <div>
             <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-1">
-              Utilidades por dimensión (entrada al análisis)
+              Utilidades por dimensi?n (entrada al an?lisis)
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-              Valores agregados desde el árbol de criterios por alternativa, antes de Pareto y MADM.
+              Valores agregados desde el ?rbol de criterios por alternativa, antes de Pareto y MADM.
             </p>
             <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700/60">
             <table className="min-w-full text-sm">
@@ -176,7 +185,7 @@ function SimulacionResultados({
                     className="border-t border-gray-100 dark:border-gray-800/80 cursor-pointer hover:bg-navy-500/5 transition"
                   >
                     <td className="px-3 py-2 font-bold text-navy-600">
-                      {alt.excluida_pareto ? '—' : alt.ranking}
+                      {alt.excluida_pareto ? '���' : alt.ranking}
                     </td>
                     <td className="px-3 py-2 font-medium">
                       {alt.nombre}
@@ -189,6 +198,14 @@ function SimulacionResultados({
                     {alt.dimensiones.map((d) => (
                       <td key={d.omoe_id} className="px-3 py-2 font-mono">
                         {d.valor?.toFixed(4)}
+                        {d.escenario_elegido && (
+                          <span
+                            className="block text-[10px] font-sans text-gray-400 dark:text-gray-500 truncate max-w-[8rem]"
+                            title={`Escenario: ${d.escenario_elegido}`}
+                          >
+                            «{d.escenario_elegido}»
+                          </span>
+                        )}
                       </td>
                     ))}
                   </tr>
@@ -198,7 +215,7 @@ function SimulacionResultados({
             </div>
           </div>
           <p className="text-[10px] text-gray-400">
-            Clic en una fila para abrir el análisis detallado del cálculo.
+            Clic en una fila para abrir el an?lisis detallado del c?lculo.
           </p>
           <div ref={analisisRef}>
             <SimulacionAnalisis resultado={resultado} initialAltId={analisisAltId} />
@@ -289,7 +306,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
         if (!cancelled) {
           setOpcionesMeta(res.data);
           const dims = res.data?.dimensiones || [];
-          setCalcConfig(createEmptyCalcConfig(dims));
+          setCalcConfig(createEmptyCalcConfig(dims, res.data?.defaults || {}));
         }
       })
       .catch(() => {
@@ -319,7 +336,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
       });
       setAnalisisAltId(null);
     } catch {
-      setError('No se pudo cargar el cálculo seleccionado.');
+      setError('No se pudo cargar el c?lculo seleccionado.');
     } finally {
       setLoading(false);
     }
@@ -331,8 +348,11 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
       return {
         nombre_calculo: (calcConfig.nombre_calculo || '').trim(),
         solo_matriz: true,
+        dimensiones_normalizar: calcConfig.dimensiones_normalizar,
       };
     }
+    const allDims = opcionesMeta?.dimensiones || [];
+    const activas = dimensionesSeleccionadas(allDims, calcConfig);
     const payload = {
       nombre_calculo: (calcConfig.nombre_calculo || '').trim(),
       aplicar_pareto: calcConfig.aplicar_pareto,
@@ -342,53 +362,75 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
       metodo_pesos: calcConfig.metodo_pesos,
       metodo_madm: calcConfig.metodo_madm,
     };
+    const epsilonCheck = parseParetoEpsilonInput(calcConfig.pareto_epsilon);
+    if (epsilonCheck.ok) {
+      payload.pareto_epsilon = epsilonCheck.value;
+    }
     if (calcConfig.metodo_pesos === 'user_defined_weights') {
-      const dimCount = opcionesMeta?.dimensiones?.length || 0;
-      const check = validatePesosDimensionesPercent(calcConfig.pesos_usuario, dimCount);
+      const pesosActivos = activas.map((dim) => {
+        const idx = allDims.findIndex((d) => d.omoe_id === dim.omoe_id);
+        return idx >= 0 ? (calcConfig.pesos_usuario || [])[idx] : '';
+      });
+      const check = validatePesosDimensionesPercent(pesosActivos, activas.length);
       if (check.ok) {
         payload.pesos_usuario = check.values;
       }
     }
     return payload;
-  }, [calcConfig, opcionesMeta?.dimensiones?.length]);
+  }, [calcConfig, opcionesMeta?.dimensiones]);
 
   const previewPayload = useMemo(
-    () => buildPreviewPayload(calcConfig, opcionesMeta?.dimensiones?.length || 0),
-    [calcConfig, opcionesMeta?.dimensiones?.length],
+    () => buildPreviewPayload(calcConfig, opcionesMeta?.dimensiones || []),
+    [calcConfig, opcionesMeta?.dimensiones],
   );
 
   const executeCalcular = useCallback(async () => {
     if (!calcConfig?.nombre_calculo?.trim()) {
-      setStepError('Escriba un nombre para el cálculo.');
+      setStepError('Escriba un nombre para el c?lculo.');
       return false;
     }
-    if (!calcConfig.solo_matriz) {
+    if (calcConfig.solo_matriz) {
+      if (!calcConfig?.dimensiones_normalizar?.length) {
+        setStepError('Seleccione al menos una dimensi?n para la comparaci?n.');
+        return false;
+      }
+    } else {
       if (calcConfig.aplicar_pareto === null || calcConfig.aplicar_pareto === undefined) {
         setStepError('Seleccione si desea aplicar el filtro Pareto.');
         return false;
       }
+      const epsilonCheck = parseParetoEpsilonInput(calcConfig.pareto_epsilon);
+      if (!epsilonCheck.ok) {
+        setStepError(epsilonCheck.message || PARETO_EPSILON_VALIDATION_MSG);
+        return false;
+      }
       if (!calcConfig?.dimensiones_normalizar?.length) {
-        setStepError('Seleccione al menos una dimensión para normalizar.');
+        setStepError('Seleccione al menos una dimensi?n para el c?lculo.');
         return false;
       }
       if (!calcConfig.normalizacion_metodo) {
-        setStepError('Seleccione un método de normalización.');
+        setStepError('Seleccione un m?todo de normalizaci?n.');
         return false;
       }
       if (!calcConfig.metodo_pesos) {
-        setStepError('Seleccione un método de cálculo de pesos.');
+        setStepError('Seleccione un m?todo de c?lculo de pesos.');
         return false;
       }
       if (calcConfig.metodo_pesos === 'user_defined_weights') {
-        const dimCount = opcionesMeta?.dimensiones?.length || 0;
-        const pesosCheck = validatePesosDimensionesPercent(calcConfig.pesos_usuario, dimCount);
+        const allDims = opcionesMeta?.dimensiones || [];
+        const activas = dimensionesSeleccionadas(allDims, calcConfig);
+        const pesosActivos = activas.map((dim) => {
+          const idx = allDims.findIndex((d) => d.omoe_id === dim.omoe_id);
+          return idx >= 0 ? (calcConfig.pesos_usuario || [])[idx] : '';
+        });
+        const pesosCheck = validatePesosDimensionesPercent(pesosActivos, activas.length);
         if (!pesosCheck.ok) {
-          setStepError(pesosCheck.message || 'Los pesos por dimensión deben sumar 100 %.');
+          setStepError(pesosCheck.message || 'Los pesos por dimensi?n deben sumar 100 %.');
           return false;
         }
       }
       if (!calcConfig.metodo_madm) {
-        setStepError('Seleccione un método MADM de ranking.');
+        setStepError('Seleccione un m?todo MADM de ranking.');
         return false;
       }
     }
@@ -420,7 +462,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
           `Faltan ${data.total_faltantes} dato(s) para calcular. Revise el listado.`,
         );
       } else {
-        setStepError(data?.detail || 'No se pudo guardar el cálculo.');
+        setStepError(data?.detail || 'No se pudo guardar el c?lculo.');
       }
       return false;
     } finally {
@@ -485,7 +527,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
       }
       await loadHistorial();
     } catch {
-      setError('No se pudo eliminar el cálculo.');
+      setError('No se pudo eliminar el c?lculo.');
     } finally {
       setDeleteTarget(null);
     }
@@ -512,7 +554,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
               : 'btn-primary'
           }`}
         >
-          {showConfigPanel ? 'Cancelar' : 'Nuevo cálculo'}
+          {showConfigPanel ? 'Cancelar' : 'Nuevo c?lculo'}
         </button>
       )}
     </div>
@@ -534,11 +576,11 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full">
       <SplitColumnLayout
-        title="Módulo de Simulaciones"
-        description="Configure el cálculo paso a paso; al final guárdelo en el historial."
+        title="M?dulo de Simulaciones"
+        description="Configure el c?lculo paso a paso; al final gu?rdelo en el historial."
         headerAction={headerAction}
         leftLabel="Historial"
-        rightLabel={showConfigPanel ? 'Nuevo cálculo' : resultado?.ok ? 'Cálculo guardado' : 'Resultado'}
+        rightLabel={showConfigPanel ? 'Nuevo c?lculo' : resultado?.ok ? 'C?lculo guardado' : 'Resultado'}
         leftWidthClass="lg:w-52 xl:w-56"
         leftCollapsible
         leftCollapsed={historialCollapsed}
@@ -565,7 +607,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
             {faltantes.length > 0 && (
               <div className="mb-6 flex flex-col">
                 <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2">
-                  Información faltante ({faltantes.length})
+                  Informaci?n faltante ({faltantes.length})
                 </h3>
                 <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700/60">
                   <table className="min-w-full text-sm">
@@ -573,7 +615,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
                       <tr>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Tipo</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Alternativa</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Dimensión</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Dimensi?n</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Escenario</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Criterio</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Detalle</th>
@@ -589,13 +631,13 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
                           <td className="px-3 py-2 text-xs whitespace-nowrap">
                             {TIPO_LABELS[f.tipo] || f.tipo}
                           </td>
-                          <td className="px-3 py-2">{f.alternativa_nombre || '—'}</td>
-                          <td className="px-3 py-2">{f.dimension || '—'}</td>
-                          <td className="px-3 py-2">{f.escenario || '—'}</td>
-                          <td className="px-3 py-2">{f.criterio || '—'}</td>
+                          <td className="px-3 py-2">{f.alternativa_nombre || '���'}</td>
+                          <td className="px-3 py-2">{f.dimension || '���'}</td>
+                          <td className="px-3 py-2">{f.escenario || '���'}</td>
+                          <td className="px-3 py-2">{f.criterio || '���'}</td>
                           <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{f.detalle}</td>
                           <td className="px-3 py-2 text-xs text-navy-600 dark:text-navy-400">
-                            {f.modulo || '—'}
+                            {f.modulo || '���'}
                           </td>
                         </tr>
                       ))}
@@ -636,8 +678,8 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
 
             {!loading && !resultado && !showConfigPanel && faltantes.length === 0 && !error && (
               <p className="text-gray-500 dark:text-gray-400 text-center py-16">
-                Seleccione un cálculo del historial o pulse{' '}
-                <strong>Nuevo cálculo</strong> para configurar uno.
+                Seleccione un c?lculo del historial o pulse{' '}
+                <strong>Nuevo c?lculo</strong> para configurar uno.
               </p>
             )}
           </>
@@ -661,10 +703,10 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
                 id="simulacion-validacion-ok-title"
                 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2"
               >
-                Validación completada
+                Validaci?n completada
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-300">
-                Todo listo: puede ejecutar un nuevo cálculo.
+                Todo listo: puede ejecutar un nuevo c?lculo.
               </p>
               <div className="flex justify-end mt-6">
                 <button
@@ -692,12 +734,12 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">
-              Eliminar cálculo
+              Eliminar c?lculo
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              ¿Eliminar{' '}
-              <strong>{deleteTarget.nombre || deleteTarget.titulo || `cálculo #${deleteTarget.id}`}</strong>
-              ? Esta acción no se puede deshacer.
+              ?Eliminar{' '}
+              <strong>{deleteTarget.nombre || deleteTarget.titulo || `c?lculo #${deleteTarget.id}`}</strong>
+              ? Esta acci?n no se puede deshacer.
             </p>
             <div className="flex justify-end gap-2 mt-6">
               <button

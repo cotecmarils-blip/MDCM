@@ -160,6 +160,12 @@ function SimulacionOpcionesDropdown({ resultado }) {
               )}
             </Row>
 
+            {opciones.aplicar_pareto && opciones.pareto_epsilon != null && (
+              <Row label="Tolerancia Pareto (epsilon)">
+                <span className="font-mono text-sm">{opciones.pareto_epsilon}</span>
+              </Row>
+            )}
+
             {opciones.aplicar_pareto && pareto && (
               <Row label="Frente no dominado">
                 <ul className="list-disc list-inside space-y-0.5 text-sm">

@@ -41,6 +41,17 @@ export const RAMA_MOP_PRESETS = {
   },
 };
 
+export function getRamaMeta(rama) {
+  if (RAMA_META[rama]) return RAMA_META[rama];
+  const code = (rama || '').toString();
+  return {
+    label: code.toUpperCase() || 'TIPO',
+    title: code || 'Tipo personalizado',
+    hint: 'Tipo de dimensión del catálogo global.',
+    badgeClass: 'bg-slate-100 text-slate-800 dark:bg-slate-800/40 dark:text-slate-200',
+  };
+}
+
 export function normalizeRama(rama) {
   if (!rama || rama === 'auto') return null;
   return rama;

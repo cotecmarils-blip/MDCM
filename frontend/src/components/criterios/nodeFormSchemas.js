@@ -5,6 +5,7 @@ import { DIMENSION_RAMA_OPTIONS } from './ramaEvaluacionOptions';
 import { showUtilidadFields, isTerminalCriterioNode } from './terminalUtils';
 import { FAMILIA_PARAM_SPECS } from './mopFuncionParams';
 import { defaultCalculationFormState, buildCalculationPayload } from './calculationMethodConstants';
+import { defaultsForRama } from './escenarioAgregacionConstants';
 
 const SENTIDO_MEJORA_OPTS = [
   { value: 'maximizar', label: 'Maximizar' },
@@ -155,7 +156,7 @@ const FIELDS_IN_UTILIDAD_BLOCK = new Set([
   'valor_maximo_utilidad',
 ]);
 
-export function getSchemaForLevel(level, item = null, formData = null) {
+export function getSchemaForLevel(level, item = null, formData = null, { tipoOptions } = {}) {
   const schema = NODE_FORM_SCHEMAS[level] || [];
   let filtered = schema;
   if (level === CRITERIO_LEVELS.MOP && isTerminalCriterioNode(level, item)) {
@@ -168,12 +169,23 @@ export function getSchemaForLevel(level, item = null, formData = null) {
   ) {
     filtered = filtered.filter((f) => !FIELDS_IN_UTILIDAD_BLOCK.has(f.name));
   }
+  if (level === CRITERIO_LEVELS.OMOE && tipoOptions?.length) {
+    filtered = filtered.map((f) => (
+      f.name === 'rama_evaluacion' ? { ...f, options: tipoOptions } : f
+    ));
+  }
   return filtered;
 }
 
 export function buildDefaultFormValues(level, item = null, { dimensionRama = null, parentNode = null } = {}) {
   const esNodoEvaluable = level === CRITERIO_LEVELS.NODO_ARBOL
-    ? (item ? !(item.hijos?.length) : false)
+    ? (item
+      ? !(item.hijos?.length) && Boolean(
+        item.tipo_criterio
+          || item.familia_funciones
+          || item.modo_evaluacion === 'incertidumbre',
+      )
+      : false)
     : level === CRITERIO_LEVELS.OMOE
       ? (item
         ? !(item.nodos?.length) && Boolean(item.tipo_criterio || item.familia_funciones)
@@ -246,6 +258,9 @@ export function buildDefaultFormValues(level, item = null, { dimensionRama = nul
   }
   if (level === CRITERIO_LEVELS.OMOE) {
     Object.assign(values, defaultCalculationFormState(item));
+    const ramaDefaults = defaultsForRama(values.rama_evaluacion || 'omoe');
+    values.escenario_agregacion = item?.escenario_agregacion || ramaDefaults.escenario_agregacion;
+    values.modo_valor_terminal = item?.modo_valor_terminal || ramaDefaults.modo_valor_terminal;
   }
   return values;
 }
@@ -331,6 +346,8 @@ export function buildPayloadFromForm(level, formData, item = null) {
   }
   if (level === CRITERIO_LEVELS.OMOE) {
     Object.assign(payload, buildCalculationPayload(formData));
+    payload.escenario_agregacion = formData.escenario_agregacion || defaultsForRama(formData.rama_evaluacion).escenario_agregacion;
+    payload.modo_valor_terminal = formData.modo_valor_terminal || defaultsForRama(formData.rama_evaluacion).modo_valor_terminal;
     delete payload.orden;
   }
   return payload;
@@ -353,7 +370,7 @@ function syncUmbralMetaFromParams(payload) {
   if (p.U !== undefined && p.U !== '') payload.valor_meta = Number(p.U);
 }
 
-function validateUtilidadParams(familia, parametros = {}) {
+export function validateUtilidadParams(familia, parametros = {}) {
   const specs = FAMILIA_PARAM_SPECS[familia] || [];
   const errors = [];
   specs.forEach((spec) => {

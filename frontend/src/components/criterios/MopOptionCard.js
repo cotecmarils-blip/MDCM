@@ -1,5 +1,6 @@
 import React from 'react';
 import MathFormula from './MathFormula';
+import UtilidadCurveChart from './UtilidadCurveChart';
 
 function CheckboxIndicator({ selected }) {
   return (
@@ -33,6 +34,7 @@ function MopOptionCard({
   onSelect,
   disabled = false,
   name,
+  curvePreview,
 }) {
   return (
     <button
@@ -55,6 +57,17 @@ function MopOptionCard({
       <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-300 leading-tight mb-1">
         {label}
       </p>
+
+      {curvePreview?.familia && (
+        <UtilidadCurveChart
+          familia={curvePreview.familia}
+          params={curvePreview.params}
+          tipoCriterio={curvePreview.tipoCriterio}
+          compact
+          showLabel={false}
+          className="mb-1.5 rounded bg-white/60 dark:bg-navy-950/40 px-1 py-0.5"
+        />
+      )}
 
       {latex ? (
         <MathFormula latex={latex} displayMode className="mop-option-card-formula" />

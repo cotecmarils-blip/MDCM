@@ -59,6 +59,84 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState(null);
+  const [exportingCurvas, setExportingCurvas] = useState(false);
+  const [exportingCurvasWord, setExportingCurvasWord] = useState(false);
+  const [exportingCostos, setExportingCostos] = useState(false);
+
+  const handleExportCurvas = async () => {
+    try {
+      setExportingCurvas(true);
+      const { data } = await evaluacionApi.exportCurvas(proyectoId);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `curvas-utilidad-proyecto-${proyectoId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      setError('No se pudieron exportar las curvas de utilidad.');
+    } finally {
+      setExportingCurvas(false);
+    }
+  };
+
+  const handleExportCurvasWord = async () => {
+    try {
+      setExportingCurvasWord(true);
+      const res = await evaluacionApi.exportInformeCurvasWord(proyectoId);
+      const blob = res.data instanceof Blob
+        ? res.data
+        : new Blob([res.data], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+      if (blob.type && blob.type.includes('json')) {
+        const text = await blob.text();
+        const parsed = JSON.parse(text);
+        throw new Error(parsed.detail || 'No se pudo generar el informe de curvas.');
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `informe-curvas-utilidad-proyecto-${proyectoId}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'No se pudo exportar el Word de curvas.');
+    } finally {
+      setExportingCurvasWord(false);
+    }
+  };
+
+  const handleExportCostosWord = async () => {
+    try {
+      setExportingCostos(true);
+      const res = await evaluacionApi.exportInformeCostosWord(proyectoId);
+      const blob = res.data instanceof Blob
+        ? res.data
+        : new Blob([res.data], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+      if (blob.type && blob.type.includes('json')) {
+        const text = await blob.text();
+        const parsed = JSON.parse(text);
+        throw new Error(parsed.detail || 'No se pudo generar el informe de costos.');
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `informe-costos-proyecto-${proyectoId}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'No se pudo exportar el Word de costos (¿hay dimensión OMOC?).');
+    } finally {
+      setExportingCostos(false);
+    }
+  };
 
   const loadAlternativas = useCallback(async () => {
     try {
@@ -115,6 +193,10 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
   }, [selectedId, loadValores]);
 
   const dimensionMatrices = useMemo(() => buildDimensionMatrices(schema), [schema]);
+  const hasOmoc = useMemo(
+    () => (schema?.dimensiones || []).some((d) => d.rama_evaluacion === 'omoc'),
+    [schema],
+  );
 
   const selectedAlt = alternativasList.find((a) => a.id === selectedId);
 
@@ -211,6 +293,46 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col h-full">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 pt-2 shrink-0">
+        {hasOmoc ? (
+          <p className="text-xs text-gray-600 dark:text-gray-400 max-w-xl leading-snug">
+            Flujo de costos (OMOC): carga el valor <strong>x</strong> bruto por ítem;
+            se suma sin curvas ni pesos de escenario. Use «Exportar costos (Word)»
+            para el informe de Felipe (escenario Estandar o Escenario base + desglose).
+          </p>
+        ) : (
+          <span />
+        )}
+        <div className="flex flex-wrap items-center gap-2 ml-auto">
+          <button
+            type="button"
+            onClick={handleExportCostosWord}
+            disabled={exportingCostos || loadingSchema}
+            className="btn btn-primary text-sm py-1.5 px-3 disabled:opacity-50"
+            title="Informe Word OMOC con escenario Estandar (suma sin pesos de escenario)"
+          >
+            {exportingCostos ? 'Generando Word…' : 'Exportar costos (Word)'}
+          </button>
+          <button
+            type="button"
+            onClick={handleExportCurvasWord}
+            disabled={exportingCurvasWord || loadingSchema}
+            className="btn btn-secondary text-sm py-1.5 px-3 disabled:opacity-50"
+            title="Curvas finales por nodo terminal y escenario (Word)"
+          >
+            {exportingCurvasWord ? 'Generando Word…' : 'Exportar curvas (Word)'}
+          </button>
+          <button
+            type="button"
+            onClick={handleExportCurvas}
+            disabled={exportingCurvas || loadingSchema}
+            className="btn btn-secondary text-sm py-1.5 px-3 disabled:opacity-50"
+            title="Curvas finales por nodo terminal y misión (JSON)"
+          >
+            {exportingCurvas ? 'Exportando…' : 'Exportar curvas (JSON)'}
+          </button>
+        </div>
+      </div>
       <SplitColumnLayout
         title="Evaluación"
         description="Variable x por alternativa, escenario y criterio terminal."

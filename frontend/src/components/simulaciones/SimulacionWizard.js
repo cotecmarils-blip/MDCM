@@ -5,10 +5,13 @@ import { NORMALIZATION_METHOD_DOCS, WEIGHT_METHOD_DOCS } from './simulacionMetho
 import SimulacionNombreField from './SimulacionNombreField';
 import SimulacionProcesoPreview from './SimulacionProcesoPreview';
 import SimulacionWizardStepper from './SimulacionWizardStepper';
+import ParetoEpsilonField from './ParetoEpsilonField';
+import { parseParetoEpsilonInput } from './paretoEpsilonUtils';
 import {
   WIZARD_STEPS,
   WIZARD_PIPELINE_FOCUS,
   buildConfigSummary,
+  dimensionesSeleccionadas,
   validateWizardStep,
 } from './simulacionWizardSteps';
 
@@ -69,6 +72,10 @@ function SimulacionWizard({
   const [stepIndex, setStepIndex] = React.useState(0);
   const currentStep = WIZARD_STEPS[stepIndex];
   const dimensiones = opcionesMeta?.dimensiones || [];
+  const dimensionesActivas = useMemo(
+    () => dimensionesSeleccionadas(dimensiones, calcConfig),
+    [dimensiones, calcConfig],
+  );
   const focusPipelineStep = useMemo(
     () => (calcConfig ? WIZARD_PIPELINE_FOCUS[currentStep.id] : 'entrada'),
     [currentStep.id, calcConfig],
@@ -92,8 +99,12 @@ function SimulacionWizard({
 
   const pesosDimensionResumen = useMemo(() => {
     if (!showPesosUsuario) return null;
-    return validatePesosDimensionesPercent(calcConfig?.pesos_usuario, dimensiones.length);
-  }, [showPesosUsuario, calcConfig?.pesos_usuario, dimensiones.length]);
+    const pesosActivos = dimensionesActivas.map((dim) => {
+      const idx = dimensiones.findIndex((d) => d.omoe_id === dim.omoe_id);
+      return idx >= 0 ? (calcConfig?.pesos_usuario || [])[idx] : '';
+    });
+    return validatePesosDimensionesPercent(pesosActivos, dimensionesActivas.length);
+  }, [showPesosUsuario, calcConfig?.pesos_usuario, dimensiones, dimensionesActivas]);
 
   if (!opcionesMeta || !calcConfig) {
     return (
@@ -124,6 +135,9 @@ function SimulacionWizard({
       : [...current, nombre];
     onChange({ ...calcConfig, dimensiones_normalizar: next });
   };
+
+  const isDimensionSelected = (nombre) =>
+    (calcConfig.dimensiones_normalizar || []).includes(nombre);
 
   const setPesoUsuario = (index, value) => {
     const pesos = [...(calcConfig.pesos_usuario || dimensiones.map(() => ''))];
@@ -162,6 +176,9 @@ function SimulacionWizard({
 
   const summary = buildConfigSummary(calcConfig, opcionesMeta);
   const isResumen = currentStep.id === 'resumen';
+  const paretoEpsilonError = !parseParetoEpsilonInput(calcConfig?.pareto_epsilon).ok
+    ? parseParetoEpsilonInput(calcConfig?.pareto_epsilon).message
+    : null;
 
   return (
     <div className="sim-wizard">
@@ -215,7 +232,7 @@ function SimulacionWizard({
                   />
                   <span>
                     <span className="font-medium text-sm text-gray-800 dark:text-gray-100">
-                      Guardar solo la matriz de utilidades
+                      Comparación solo con matriz de utilidades
                     </span>
                     <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                       No continúa con MIN/MAX, Pareto, normalización, pesos ni ranking MADM:
@@ -223,36 +240,74 @@ function SimulacionWizard({
                     </span>
                   </span>
                 </label>
+                {soloMatriz && dimensiones.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                      Dimensiones a incluir
+                    </p>
+                    {dimensiones.map((dim) => (
+                      <label
+                        key={dim.omoe_id}
+                        className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded-lg border border-gray-200 dark:border-gray-700/60"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isDimensionSelected(dim.nombre)}
+                          disabled={loading}
+                          onChange={() => toggleDimension(dim.nombre)}
+                          className="rounded border-gray-300 shrink-0"
+                        />
+                        <span className="font-medium">{dim.nombre}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </>
             )}
 
             {currentStep.id === 'direcciones' && (
               <div className="space-y-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  El Pareto usa estas direcciones para decidir qué alternativa domina a otra
-                  (notebook 01). Revise la matriz de entrada a la derecha.
+                  Marque las dimensiones que participarán en Pareto, normalización, pesos y ranking.
+                  Para cada una indique si mayor o menor valor es mejor.
                 </p>
-                {dimensiones.map((dim) => (
+                {dimensiones.map((dim) => {
+                  const selected = isDimensionSelected(dim.nombre);
+                  return (
                   <div
                     key={dim.omoe_id}
-                    className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700/60 bg-gray-50/50 dark:bg-navy-900/30"
+                    className={`flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border ${
+                      selected
+                        ? 'border-navy-500/40 bg-navy-500/[0.04] border-gray-200 dark:border-gray-700/60'
+                        : 'border-gray-200 dark:border-gray-700/60 bg-gray-50/30 dark:bg-navy-900/20 opacity-75'
+                    }`}
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{dim.nombre}</p>
-                      <p className="text-xs text-gray-400">{dim.rama_evaluacion}</p>
-                    </div>
+                    <label className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        disabled={loading}
+                        onChange={() => toggleDimension(dim.nombre)}
+                        className="rounded border-gray-300 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{dim.nombre}</p>
+                        <p className="text-xs text-gray-400">{dim.rama_evaluacion}</p>
+                      </div>
+                    </label>
                     <select
                       value={getDirection(dim.omoe_id) || dim.direction || 'max'}
-                      disabled={loading}
+                      disabled={loading || !selected}
                       onChange={(e) => setDirection(dim.omoe_id, e.target.value)}
-                      className="form-select text-sm w-full sm:w-auto min-w-[12rem] shrink-0"
+                      className="form-select text-sm w-full sm:w-auto min-w-[12rem] shrink-0 disabled:opacity-50"
                       aria-label={`Tipo ${dim.nombre}`}
                     >
                       <option value="max">Mayor es mejor (MAX)</option>
                       <option value="min">Menor es mejor (MIN)</option>
                     </select>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -280,40 +335,29 @@ function SimulacionWizard({
                     description="Todas las alternativas continúan."
                   />
                 </div>
+                {calcConfig.aplicar_pareto && (
+                  <ParetoEpsilonField
+                    value={calcConfig.pareto_epsilon}
+                    onChange={(pareto_epsilon) => onChange({ ...calcConfig, pareto_epsilon })}
+                    disabled={loading}
+                    error={paretoEpsilonError}
+                  />
+                )}
               </div>
             )}
 
             {currentStep.id === 'normalizacion' && (
               <div className="space-y-4">
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Indique qué dimensiones escalar y el método. La matriz normalizada aparece a la
-                  derecha.
+                  Las dimensiones ya fueron elegidas en el paso anterior. Aquí solo define el
+                  método de escala (recomendado para usuarios no expertos: vectorial direccional).
                 </p>
-                <div>
-                  <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">
-                    Dimensiones a normalizar *
+                {dimensionesActivas.length > 0 && (
+                  <p className="text-xs text-navy-600 dark:text-navy-400 rounded-lg bg-navy-500/[0.06] px-3 py-2">
+                    Dimensiones en el cálculo:{' '}
+                    <strong>{dimensionesActivas.map((d) => d.nombre).join(', ')}</strong>
                   </p>
-                  <div className="space-y-2">
-                    {dimensiones.map((dim) => (
-                      <label
-                        key={dim.omoe_id}
-                        className="flex items-center gap-2 text-sm cursor-pointer p-2.5 rounded-lg border border-gray-200 dark:border-gray-700/60"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={(calcConfig.dimensiones_normalizar || []).includes(dim.nombre)}
-                          disabled={loading}
-                          onChange={() => toggleDimension(dim.nombre)}
-                          className="rounded border-gray-300 shrink-0"
-                        />
-                        <span className="font-medium">{dim.nombre}</span>
-                        <span className="text-xs text-gray-400 ml-auto">
-                          {getDirection(dim.omoe_id) === 'min' ? 'MIN' : 'MAX'}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
+                )}
                 <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-200 dark:border-gray-700/60">
                   <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">
                     Método de normalización *
@@ -405,7 +449,9 @@ function SimulacionWizard({
                       Pesos por dimensión (%)
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {dimensiones.map((dim, idx) => (
+                      {dimensionesActivas.map((dim) => {
+                        const idx = dimensiones.findIndex((d) => d.omoe_id === dim.omoe_id);
+                        return (
                         <div key={dim.omoe_id}>
                           <label className="text-xs text-gray-500">{dim.nombre}</label>
                           <div className="relative mt-1">
@@ -425,7 +471,8 @@ function SimulacionWizard({
                             </span>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     {pesosDimensionResumen && (
                       <p
@@ -447,7 +494,8 @@ function SimulacionWizard({
             {currentStep.id === 'madm' && (
               <div className="space-y-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  El ranking preliminar se calcula a la derecha al elegir el método.
+                  Por defecto se usa TOPSIS (recomendado). El ranking preliminar se calcula a la
+                  derecha al elegir el método.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {madmMethods.map((m) => (
@@ -510,7 +558,7 @@ function SimulacionWizard({
               Anterior
             </button>
             <p className="text-xs text-gray-400">
-              {soloMatriz ? 'Solo matriz' : `Paso ${stepIndex + 1} / ${WIZARD_STEPS.length}`}
+              {soloMatriz ? 'Comparación con matriz' : `Paso ${stepIndex + 1} / ${WIZARD_STEPS.length}`}
             </p>
             {soloMatriz ? (
               <button
@@ -519,7 +567,7 @@ function SimulacionWizard({
                 disabled={loading}
                 className="btn btn-primary text-sm disabled:opacity-50"
               >
-                {loading ? 'Guardando…' : 'Guardar matriz'}
+                {loading ? 'Guardando…' : 'Comparar con matriz'}
               </button>
             ) : isResumen ? (
               <button
@@ -549,7 +597,7 @@ function SimulacionWizard({
             proyectoId={proyectoId}
             previewPayload={previewPayload}
             calcConfig={calcConfig}
-            dimCount={dimensiones.length}
+            dimCount={dimensionesActivas.length}
             focusStepId={focusPipelineStep}
             enabled
           />

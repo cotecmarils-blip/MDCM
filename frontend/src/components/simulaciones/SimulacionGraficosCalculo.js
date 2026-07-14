@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import TradeoffCharts from '../resultados/TradeoffCharts';
+import SimulacionComparacionNivel from './SimulacionComparacionNivel';
 import SimulacionDimensionFilter, {
   defaultSelectedDimIds,
 } from './SimulacionDimensionFilter';
@@ -35,6 +36,7 @@ function SimulacionGraficosCalculo({
     [resultado],
   );
   const [selectedDimIds, setSelectedDimIds] = useState([]);
+  const [vistaGrafico, setVistaGrafico] = useState('dimensiones');
 
   useEffect(() => {
     setSelectedDimIds(defaultSelectedDimIds(dimensiones));
@@ -76,7 +78,9 @@ function SimulacionGraficosCalculo({
     : MADM_LABELS[chartData.metodoMadm] || chartData.metodoMadm || 'MADM';
   const fmt = (val, digits = 3) => (val == null ? '—' : Number(val).toFixed(digits));
 
-  if (!sortedPuntos.length) {
+  const tieneAlternativas = (resultado?.alternativas || []).length > 0;
+
+  if (!tieneAlternativas) {
     return (
       <p className="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
         No hay alternativas con datos suficientes para graficar en este cálculo.
@@ -84,18 +88,62 @@ function SimulacionGraficosCalculo({
     );
   }
 
+  if (!sortedPuntos.length && vistaGrafico === 'dimensiones') {
+    return (
+      <p className="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
+        No hay alternativas con datos suficientes para graficar por dimensión.
+      </p>
+    );
+  }
+
   return (
     <div className="space-y-5">
-      <p className="text-xs text-gray-500 dark:text-gray-400">
-        Espacio de objetivos del cálculo (utilidades por dimensión).
-        {chartData.aplicarPareto && (
-          <span className="text-amber-700 dark:text-amber-400">
-            {' '}
-            Solo alternativas del frente Pareto.
-          </span>
-        )}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-gray-500 dark:text-gray-400 max-w-2xl">
+          {vistaGrafico === 'dimensiones'
+            ? 'Espacio de objetivos del cálculo (utilidades por dimensión).'
+            : 'Compare alternativas en cualquier nivel del árbol (solo nodos hermanos).'}
+          {chartData.aplicarPareto && vistaGrafico === 'dimensiones' && (
+            <span className="text-amber-700 dark:text-amber-400">
+              {' '}
+              Solo alternativas del frente Pareto.
+            </span>
+          )}
+        </p>
+        <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700/60 p-0.5 bg-gray-50 dark:bg-navy-900/40 shrink-0">
+          <button
+            type="button"
+            onClick={() => setVistaGrafico('dimensiones')}
+            className={`text-xs font-medium px-3 py-1.5 rounded-md transition ${
+              vistaGrafico === 'dimensiones'
+                ? 'bg-white dark:bg-navy-800 shadow-sm text-navy-700 dark:text-navy-200'
+                : 'text-gray-500'
+            }`}
+          >
+            Por dimensión
+          </button>
+          <button
+            type="button"
+            onClick={() => setVistaGrafico('nivel')}
+            className={`text-xs font-medium px-3 py-1.5 rounded-md transition ${
+              vistaGrafico === 'nivel'
+                ? 'bg-white dark:bg-navy-800 shadow-sm text-navy-700 dark:text-navy-200'
+                : 'text-gray-500'
+            }`}
+          >
+            Por nivel del árbol
+          </button>
+        </div>
+      </div>
 
+      {vistaGrafico === 'nivel' ? (
+        <SimulacionComparacionNivel
+          resultado={resultado}
+          plotBgColor={plotBgColor}
+          onPlotBgColorChange={onPlotBgColorChange}
+        />
+      ) : (
+        <>
       <SimulacionDimensionFilter
         dimensiones={dimensiones}
         selectedIds={selectedDimIds}
@@ -182,6 +230,8 @@ function SimulacionGraficosCalculo({
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }
