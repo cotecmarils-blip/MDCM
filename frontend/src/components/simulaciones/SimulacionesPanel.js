@@ -18,10 +18,10 @@ import { parseParetoEpsilonInput, PARETO_EPSILON_VALIDATION_MSG } from './pareto
 import { MODAL_BACKDROP_CLASS } from '../../utils/modalBackdrop';
 
 const TIPO_LABELS = {
-  valor_evaluacion: 'Valor en evaluaci?n',
+  valor_evaluacion: 'Valor en evaluación',
   constante: 'Constante del criterio',
   peso: 'Peso',
-  configuracion: 'Configuraci?n',
+  configuracion: 'Configuración',
 };
 
 function SimulacionResultados({
@@ -53,7 +53,7 @@ function SimulacionResultados({
     <div className="space-y-6">
       {esHistorial && (
         <p className="text-xs text-navy-600 dark:text-navy-400 font-medium">
-          {resultado.titulo_historial || 'C?lculo guardado'}
+          {resultado.titulo_historial || 'Cálculo guardado'}
         </p>
       )}
 
@@ -94,11 +94,11 @@ function SimulacionResultados({
       ) : soloMatriz ? (
         <div>
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-1">
-            Matriz de utilidades por dimensi?n
+            Matriz de utilidades por dimensión
           </h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-            Valores agregados desde el ?rbol de criterios por alternativa. Comparaci?n solo con
-            matriz de utilidades (sin normalizaci?n, Pareto ni ranking MADM).
+            Valores agregados desde el árbol de criterios por alternativa. Comparación solo con
+            matriz de utilidades (sin normalización, Pareto ni ranking MADM).
           </p>
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700/60">
             <table className="min-w-full text-sm">
@@ -153,10 +153,10 @@ function SimulacionResultados({
 
           <div>
             <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-1">
-              Utilidades por dimensi?n (entrada al an?lisis)
+              Utilidades por dimensión (entrada al análisis)
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-              Valores agregados desde el ?rbol de criterios por alternativa, antes de Pareto y MADM.
+              Valores agregados desde el árbol de criterios por alternativa, antes de Pareto y MADM.
             </p>
             <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700/60">
             <table className="min-w-full text-sm">
@@ -215,7 +215,7 @@ function SimulacionResultados({
             </div>
           </div>
           <p className="text-[10px] text-gray-400">
-            Clic en una fila para abrir el an?lisis detallado del c?lculo.
+            Clic en una fila para abrir el análisis detallado del cálculo.
           </p>
           <div ref={analisisRef}>
             <SimulacionAnalisis resultado={resultado} initialAltId={analisisAltId} />
@@ -336,7 +336,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
       });
       setAnalisisAltId(null);
     } catch {
-      setError('No se pudo cargar el c?lculo seleccionado.');
+      setError('No se pudo cargar el cálculo seleccionado.');
     } finally {
       setLoading(false);
     }
@@ -386,12 +386,12 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
 
   const executeCalcular = useCallback(async () => {
     if (!calcConfig?.nombre_calculo?.trim()) {
-      setStepError('Escriba un nombre para el c?lculo.');
+      setStepError('Escriba un nombre para el cálculo.');
       return false;
     }
     if (calcConfig.solo_matriz) {
       if (!calcConfig?.dimensiones_normalizar?.length) {
-        setStepError('Seleccione al menos una dimensi?n para la comparaci?n.');
+        setStepError('Seleccione al menos una dimensión para la comparación.');
         return false;
       }
     } else {
@@ -405,15 +405,15 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
         return false;
       }
       if (!calcConfig?.dimensiones_normalizar?.length) {
-        setStepError('Seleccione al menos una dimensi?n para el c?lculo.');
+        setStepError('Seleccione al menos una dimensión para el cálculo.');
         return false;
       }
       if (!calcConfig.normalizacion_metodo) {
-        setStepError('Seleccione un m?todo de normalizaci?n.');
+        setStepError('Seleccione un método de normalización.');
         return false;
       }
       if (!calcConfig.metodo_pesos) {
-        setStepError('Seleccione un m?todo de c?lculo de pesos.');
+        setStepError('Seleccione un método de cálculo de pesos.');
         return false;
       }
       if (calcConfig.metodo_pesos === 'user_defined_weights') {
@@ -425,12 +425,12 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
         });
         const pesosCheck = validatePesosDimensionesPercent(pesosActivos, activas.length);
         if (!pesosCheck.ok) {
-          setStepError(pesosCheck.message || 'Los pesos por dimensi?n deben sumar 100 %.');
+          setStepError(pesosCheck.message || 'Los pesos por dimensión deben sumar 100 %.');
           return false;
         }
       }
       if (!calcConfig.metodo_madm) {
-        setStepError('Seleccione un m?todo MADM de ranking.');
+        setStepError('Seleccione un método MADM de ranking.');
         return false;
       }
     }
@@ -462,7 +462,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
           `Faltan ${data.total_faltantes} dato(s) para calcular. Revise el listado.`,
         );
       } else {
-        setStepError(data?.detail || 'No se pudo guardar el c?lculo.');
+        setStepError(data?.detail || 'No se pudo guardar el cálculo.');
       }
       return false;
     } finally {
@@ -527,7 +527,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
       }
       await loadHistorial();
     } catch {
-      setError('No se pudo eliminar el c?lculo.');
+      setError('No se pudo eliminar el cálculo.');
     } finally {
       setDeleteTarget(null);
     }
@@ -554,7 +554,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
               : 'btn-primary'
           }`}
         >
-          {showConfigPanel ? 'Cancelar' : 'Nuevo c?lculo'}
+          {showConfigPanel ? 'Cancelar' : 'Nuevo cálculo'}
         </button>
       )}
     </div>
@@ -576,11 +576,11 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full">
       <SplitColumnLayout
-        title="M?dulo de Simulaciones"
-        description="Configure el c?lculo paso a paso; al final gu?rdelo en el historial."
+        title="Módulo de Simulaciones"
+        description="Configure el cálculo paso a paso; al final guárdelo en el historial."
         headerAction={headerAction}
         leftLabel="Historial"
-        rightLabel={showConfigPanel ? 'Nuevo c?lculo' : resultado?.ok ? 'C?lculo guardado' : 'Resultado'}
+        rightLabel={showConfigPanel ? 'Nuevo cálculo' : resultado?.ok ? 'Cálculo guardado' : 'Resultado'}
         leftWidthClass="lg:w-52 xl:w-56"
         leftCollapsible
         leftCollapsed={historialCollapsed}
@@ -607,7 +607,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
             {faltantes.length > 0 && (
               <div className="mb-6 flex flex-col">
                 <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2">
-                  Informaci?n faltante ({faltantes.length})
+                  Información faltante ({faltantes.length})
                 </h3>
                 <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700/60">
                   <table className="min-w-full text-sm">
@@ -615,7 +615,7 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
                       <tr>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Tipo</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Alternativa</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Dimensi?n</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Dimensión</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Escenario</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Criterio</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Detalle</th>
@@ -678,8 +678,8 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
 
             {!loading && !resultado && !showConfigPanel && faltantes.length === 0 && !error && (
               <p className="text-gray-500 dark:text-gray-400 text-center py-16">
-                Seleccione un c?lculo del historial o pulse{' '}
-                <strong>Nuevo c?lculo</strong> para configurar uno.
+                Seleccione un cálculo del historial o pulse{' '}
+                <strong>Nuevo cálculo</strong> para configurar uno.
               </p>
             )}
           </>
@@ -703,10 +703,10 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
                 id="simulacion-validacion-ok-title"
                 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2"
               >
-                Validaci?n completada
+                Validación completada
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-300">
-                Todo listo: puede ejecutar un nuevo c?lculo.
+                Todo listo: puede ejecutar un nuevo cálculo.
               </p>
               <div className="flex justify-end mt-6">
                 <button
@@ -734,12 +734,12 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">
-              Eliminar c?lculo
+              Eliminar cálculo
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              ?Eliminar{' '}
-              <strong>{deleteTarget.nombre || deleteTarget.titulo || `c?lculo #${deleteTarget.id}`}</strong>
-              ? Esta acci?n no se puede deshacer.
+              ¿Eliminar{' '}
+              <strong>{deleteTarget.nombre || deleteTarget.titulo || `cálculo #${deleteTarget.id}`}</strong>
+              ? Esta acción no se puede deshacer.
             </p>
             <div className="flex justify-end gap-2 mt-6">
               <button
