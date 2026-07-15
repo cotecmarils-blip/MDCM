@@ -212,7 +212,21 @@ function EvaluacionDimensionTable({ matrix, valores, onChange, disabled, preview
                   </td>
                   {filas.map((esc) => {
                     const key = valorCellKey(col.nivel, col.nodo_id, esc.id);
-                    const colMeta = (columnasMeta && columnasMeta[key]) || col;
+                    const colMeta = columnasMeta && columnasMeta[key];
+                    // Sin meta de columna = nodo desactivado en este escenario.
+                    if (!colMeta) {
+                      return (
+                        <td
+                          key={key}
+                          className="px-2 py-1.5 align-middle min-w-[7rem] bg-gray-50/70 dark:bg-navy-950/40"
+                          title="Este nodo no aplica en este escenario"
+                        >
+                          <span className="block text-center text-[10px] text-gray-400 dark:text-gray-500 italic">
+                            No aplica
+                          </span>
+                        </td>
+                      );
+                    }
                     const constantesDisplay = colMeta.constantes_display
                       || (colMeta.constantes && Object.keys(colMeta.constantes).length
                         ? Object.entries(colMeta.constantes)
@@ -279,22 +293,26 @@ function EvaluacionDimensionAccordion({
   disabled,
   previewMode,
 }) {
-  const { omoe_nombre, rama_evaluacion, columnas, filas } = matrix;
+  const { omoe_nombre, rama_evaluacion, columnas, filas, columnasMeta } = matrix;
   const ramaClass = RAMA_BADGE[rama_evaluacion] || RAMA_BADGE.omoe;
-  const filledCount = useMemo(() => {
-    if (!columnas.length || !filas.length) return 0;
-    let n = 0;
+  const { filledCount, totalCells } = useMemo(() => {
+    if (!columnas.length || !filas.length) {
+      return { filledCount: 0, totalCells: 0 };
+    }
+    let filled = 0;
+    let total = 0;
     columnas.forEach((col) => {
       filas.forEach((esc) => {
         const key = valorCellKey(col.nivel, col.nodo_id, esc.id);
+        // Solo celdas activas en el escenario (presentes en el schema).
+        if (!(columnasMeta && columnasMeta[key])) return;
+        total += 1;
         const v = valores[key];
-        if (v != null && String(v).trim() !== '') n += 1;
+        if (v != null && String(v).trim() !== '') filled += 1;
       });
     });
-    return n;
-  }, [columnas, filas, valores]);
-
-  const totalCells = columnas.length * filas.length;
+    return { filledCount: filled, totalCells: total };
+  }, [columnas, filas, columnasMeta, valores]);
 
   return (
     <section className="rounded-lg border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-navy-900/30 overflow-hidden">

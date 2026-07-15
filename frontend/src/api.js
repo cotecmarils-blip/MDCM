@@ -433,6 +433,11 @@ export const evaluacionApi = {
     api.get(`/proyectos/${proyectoId}/informe-costos-word/`, {
       responseType: 'blob',
     }),
+  exportInformeProyectoWord: (proyectoId, includeMapWeights = false) =>
+    api.get(`/proyectos/${proyectoId}/informe-proyecto-word/`, {
+      responseType: 'blob',
+      params: { map_weights: includeMapWeights },
+    }),
   getValores: (proyectoId, alternativaId) =>
     api.get(`/proyectos/${proyectoId}/evaluacion/valores/`, {
       params: { alternativa: alternativaId },

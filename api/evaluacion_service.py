@@ -493,14 +493,50 @@ def apply_valores_fallback_escenarios(
     return patched, used_fallback
 
 
+def _terminal_aplica_en_escenario(
+    terminal: dict,
+    config_map: dict[int, dict] | None,
+    parent_by_id: dict[int, int | None] | None = None,
+) -> bool:
+    """False si el nodo o algún ancestro está desactivado en el escenario."""
+    if terminal.get('nivel') != NIVEL_NODO_ARBOL:
+        return True
+    if not config_map:
+        return True
+    nodo_id = terminal.get('nodo_id')
+    if nodo_id is None:
+        return True
+    visited: set[int] = set()
+    current: int | None = int(nodo_id)
+    while current is not None and current not in visited:
+        visited.add(current)
+        cfg = config_map.get(current) or {}
+        if not bool(cfg.get('aplica', True)):
+            return False
+        if not parent_by_id:
+            break
+        current = parent_by_id.get(current)
+    return True
+
+
 def _columnas_for_dimension(terminales: list[dict], escenarios: list[Escenario]) -> list[dict]:
     from .nodo_escenario_service import load_config_map, seed_arbol_config_for_escenario
+
+    parent_by_id: dict[int, int | None] = {}
+    omoe_ids = {t.get('omoe_id') for t in terminales if t.get('omoe_id')}
+    if omoe_ids:
+        parent_by_id = {
+            n['id']: n['parent_id']
+            for n in NodoArbol.objects.filter(omoe_id__in=omoe_ids).values('id', 'parent_id')
+        }
 
     columnas = []
     for idx, esc in enumerate(escenarios, start=1):
         seed_arbol_config_for_escenario(esc)
         config_map = load_config_map(esc.id)
         for t in terminales:
+            if not _terminal_aplica_en_escenario(t, config_map, parent_by_id):
+                continue
             merged = _merge_terminal_escenario_config(t, config_map)
             if not merged.get('aplica', True):
                 continue
@@ -633,9 +669,7 @@ def export_alternativa_valores(alternativa_id: int) -> dict[str, Any]:
         raw = valores.get(col['key'], '')
         if raw == '':
             continue
-        label = col['terminal_nombre']
-        if col.get('escenario_nombre'):
-            label = f"{label} ({col['escenario_label']})"
+        label = export_label_for_column(col)
         if col['input_kind'] == 'number':
             try:
                 row[label] = float(raw) if '.' in raw else int(raw)
@@ -652,7 +686,7 @@ _OCEAN_MISSION_SUFFIX = re.compile(r' \(M(\d+)\)$')
 def export_label_for_column(col: dict) -> str:
     label = col['terminal_nombre']
     if col.get('escenario_nombre'):
-        label = f"{label} ({col['escenario_label']})"
+        label = f"{label} ({col['escenario_nombre']})"
     return label
 
 
@@ -664,6 +698,10 @@ def build_import_label_map(schema: dict) -> dict[str, str]:
     for col in schema.get('columnas') or []:
         export_label = export_label_for_column(col)
         by_export[export_label] = col['key']
+        # Compatibilidad con archivos anteriores que usaban M1, M2, etc.
+        if col.get('escenario_label'):
+            legacy_label = f"{col['terminal_nombre']} ({col['escenario_label']})"
+            by_export[legacy_label] = col['key']
         by_terminal.setdefault(col['terminal_nombre'], []).append(col)
 
     for terminal, cols in by_terminal.items():

@@ -489,6 +489,17 @@ def resolve_proyecto_id(obj):
         return None
     if isinstance(obj, Proyecto):
         return obj.id
+    if isinstance(obj, Alternativa):
+        if getattr(obj, 'proyecto_id', None):
+            return obj.proyecto_id
+        alt_id = getattr(obj, 'id', None)
+        if alt_id:
+            return (
+                Alternativa.objects.filter(pk=alt_id)
+                .values_list('proyecto_id', flat=True)
+                .first()
+            )
+        return None
     if isinstance(obj, Omoe):
         if getattr(obj, 'proyecto_id', None):
             return obj.proyecto_id

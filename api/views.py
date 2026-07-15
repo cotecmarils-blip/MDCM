@@ -775,6 +775,33 @@ class ProyectoViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
 
+    @action(detail=True, methods=['get'], url_path='informe-proyecto-word')
+    def informe_proyecto_word(self, request, pk=None):
+        """Word integral de proyecto: alternativas, árboles/pesos y evaluaciones."""
+        from django.http import HttpResponse
+
+        from .informe_word_service import build_informe_proyecto_docx
+
+        proyecto = self.get_object()
+        include_map_weights = (
+            str(request.query_params.get('map_weights', '')).strip().lower()
+            in {'1', 'true', 'yes', 'si', 'sí'}
+        )
+        content = build_informe_proyecto_docx(
+            proyecto,
+            include_map_weights=include_map_weights,
+        )
+        filename = f'informe-proyecto-{proyecto.id}.docx'
+        response = HttpResponse(
+            content,
+            content_type=(
+                'application/vnd.openxmlformats-officedocument.'
+                'wordprocessingml.document'
+            ),
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
     @action(detail=True, methods=['get'], url_path='informe-curvas-word')
     def informe_curvas_word(self, request, pk=None):
         """Word con curvas de utilidad finales (nodo terminal × escenario)."""

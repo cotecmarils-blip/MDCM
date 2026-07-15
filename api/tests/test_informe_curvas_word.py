@@ -1,6 +1,8 @@
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
+from docx import Document
 
 from api.informe_word_service import build_informe_curvas_docx
 
@@ -41,6 +43,7 @@ class InformeCurvasWordTests(SimpleTestCase):
                         {
                             'terminal_nombre': 'Velocidad',
                             'escenario_nombre': 'Misión 1',
+                            'escenario_label': 'M1',
                             'familia_funciones': 'min_max',
                             'constantes_display': 'L=0, U=30',
                             'unidad': 'kn',
@@ -54,3 +57,12 @@ class InformeCurvasWordTests(SimpleTestCase):
         proyecto.nombre = 'Demo'
         content = build_informe_curvas_docx(proyecto)
         self.assertTrue(content[:2] == b'PK')
+        document = Document(BytesIO(content))
+        table_text = [
+            cell.text
+            for table in document.tables
+            for row in table.rows
+            for cell in row.cells
+        ]
+        self.assertIn('Misión 1', table_text)
+        self.assertNotIn('M1', table_text)
