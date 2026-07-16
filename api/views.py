@@ -71,6 +71,7 @@ from .models import (
     DpCriterio,
     NodoArbol,
     VopResultado,
+    InformeProyectoJob,
 )
 from .nodo_arbol_serializers import NodoArbolSerializer, ProyectoNivelArbolSerializer
 from .arbol_nivel_service import ensure_all_ramas_niveles, ensure_niveles_arbol
@@ -757,7 +758,7 @@ class ProyectoViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='informe-costos-word')
     def informe_costos_word(self, request, pk=None):
-        """Word de costos (OMOC) con escenario Estandar — prioridad Felipe."""
+        """Word de costos (OMOC) con escenario Estandar."""
         from django.http import HttpResponse
 
         from .informe_word_service import build_informe_costos_docx
@@ -800,6 +801,134 @@ class ProyectoViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
             ),
         )
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='informe-proyecto-word/jobs',
+    )
+    def iniciar_informe_proyecto_word(self, request, pk=None):
+        """Inicia la generación sin bloquear la petición HTTP."""
+        from .informe_job_service import start_informe_proyecto_job
+
+        proyecto = self.get_object()
+        include_map_weights = (
+            str(request.data.get('map_weights', '')).strip().lower()
+            in {'1', 'true', 'yes', 'si', 'sí'}
+        )
+        job = InformeProyectoJob.objects.create(
+            proyecto=proyecto,
+            usuario=request.user,
+            incluir_pesos_mapas=include_map_weights,
+        )
+        start_informe_proyecto_job(job)
+        return Response(
+            {
+                'job_id': str(job.id),
+                'estado': job.estado,
+                'progreso': job.progreso,
+                'etapa': job.etapa,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path='informe-proyecto-word/activo',
+    )
+    def informe_proyecto_word_activo(self, request, pk=None):
+        """Job pendiente/en curso del usuario (para restaurar la barra al volver)."""
+        proyecto = self.get_object()
+        queryset = InformeProyectoJob.objects.filter(
+            proyecto=proyecto,
+            estado__in=[
+                InformeProyectoJob.ESTADO_PENDIENTE,
+                InformeProyectoJob.ESTADO_PROCESANDO,
+            ],
+        )
+        if not is_global_admin(request.user):
+            queryset = queryset.filter(usuario=request.user)
+        job = queryset.order_by('-fecha_creacion').first()
+        if job is None:
+            return Response({'activo': False})
+        return Response({
+            'activo': True,
+            'job_id': str(job.id),
+            'estado': job.estado,
+            'progreso': job.progreso,
+            'etapa': job.etapa,
+            'error': '',
+            'listo': False,
+        })
+
+    def _informe_proyecto_job_for_user(self, request, proyecto, job_id):
+        queryset = InformeProyectoJob.objects.filter(
+            pk=job_id,
+            proyecto=proyecto,
+        )
+        if not is_global_admin(request.user):
+            queryset = queryset.filter(usuario=request.user)
+        return queryset.first()
+
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path=r'informe-proyecto-word/jobs/(?P<job_id>[^/.]+)',
+    )
+    def progreso_informe_proyecto_word(self, request, pk=None, job_id=None):
+        """Devuelve porcentaje y etapa actual de la generación."""
+        proyecto = self.get_object()
+        job = self._informe_proyecto_job_for_user(request, proyecto, job_id)
+        if job is None:
+            return Response(
+                {'detail': 'Generación no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response({
+            'job_id': str(job.id),
+            'estado': job.estado,
+            'progreso': job.progreso,
+            'etapa': job.etapa,
+            'error': job.error if job.estado == InformeProyectoJob.ESTADO_ERROR else '',
+            'listo': (
+                job.estado == InformeProyectoJob.ESTADO_COMPLETADO
+                and bool(job.archivo)
+            ),
+        })
+
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path=r'informe-proyecto-word/jobs/(?P<job_id>[^/.]+)/download',
+    )
+    def descargar_informe_proyecto_word(self, request, pk=None, job_id=None):
+        """Descarga el archivo únicamente cuando el trabajo está completo."""
+        from django.http import FileResponse
+
+        proyecto = self.get_object()
+        job = self._informe_proyecto_job_for_user(request, proyecto, job_id)
+        if job is None:
+            return Response(
+                {'detail': 'Generación no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if job.estado != InformeProyectoJob.ESTADO_COMPLETADO or not job.archivo:
+            return Response(
+                {'detail': 'El informe todavía no está listo.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        response = FileResponse(
+            job.archivo.open('rb'),
+            content_type=(
+                'application/vnd.openxmlformats-officedocument.'
+                'wordprocessingml.document'
+            ),
+        )
+        response['Content-Disposition'] = (
+            f'attachment; filename="informe-proyecto-{proyecto.id}.docx"'
+        )
         return response
 
     @action(detail=True, methods=['get'], url_path='informe-curvas-word')
@@ -1181,6 +1310,45 @@ class ProyectoViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
             return Response(get_simulacion_historial(proyecto, hid))
         except ObjectDoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
+
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path=r'simulacion/historial/(?P<historial_id>[0-9]+)/informe-resultados-word',
+    )
+    def simulacion_informe_resultados_word(self, request, pk=None, historial_id=None):
+        """Exporta el Informe de resultados (Etapa 3) del cálculo seleccionado."""
+        from django.core.exceptions import ObjectDoesNotExist
+        from django.http import HttpResponse
+
+        from .informe_resultados_word_service import build_informe_resultados_from_historial
+
+        proyecto = self.get_object()
+        try:
+            hid = int(historial_id)
+        except (TypeError, ValueError):
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            content = build_informe_resultados_from_historial(proyecto, hid)
+        except ObjectDoesNotExist:
+            return Response(
+                {'detail': 'Cálculo no encontrado.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        filename = f'informe-resultados-{proyecto.id}-{hid}.docx'
+        response = HttpResponse(
+            content,
+            content_type=(
+                'application/vnd.openxmlformats-officedocument.'
+                'wordprocessingml.document'
+            ),
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
     @action(detail=True, methods=['post'], url_path='simulacion/sensibilidad')
     def simulacion_sensibilidad(self, request, pk=None):

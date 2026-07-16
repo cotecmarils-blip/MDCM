@@ -289,14 +289,13 @@ def next_orden_visual_nodo(
     *,
     omoe_id: int,
     parent_id: int | None,
-    tipo_nivel_id: int | None,
+    tipo_nivel_id: int | None = None,
 ) -> int:
-    """Siguiente orden entre hermanos del mismo padre y mismo tipo de nivel."""
+    """Siguiente orden entre hermanos del mismo padre (el nuevo queda al final)."""
     from .models import NodoArbol
 
+    # Misma secuencia para todos los hijos del padre (no fragmentar por tipo_nivel).
     qs = NodoArbol.objects.filter(omoe_id=omoe_id, parent_id=parent_id)
-    if tipo_nivel_id is not None:
-        qs = qs.filter(tipo_nivel_id=tipo_nivel_id)
     return next_orden_visual(qs)
 
 

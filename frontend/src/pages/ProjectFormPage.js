@@ -206,9 +206,9 @@ function ProjectFormPage() {
                 name="descripcion"
                 value={formData.descripcion}
                 onChange={handleChange}
-                rows={2}
-                className={`${inputClass} resize-none`}
-                placeholder=""
+                rows={6}
+                className={`${inputClass} min-h-[8rem] resize-y`}
+                placeholder="Describe el problema o el alcance del proyecto…"
               />
             </div>
           </section>

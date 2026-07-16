@@ -280,7 +280,7 @@ def collect_terminal_nodes_for_omoe(omoe: Omoe, risk_ctx: dict | None = None) ->
         NodoArbol.objects.filter(omoe=omoe)
         .annotate(num_hijos=Count('hijos'))
         .filter(num_hijos=0)
-        .order_by('orden_visual', 'nombre', 'id')
+        .order_by('orden_visual', 'id')
     )
     if leaves.exists():
         return [_terminal_from_nodo_arbol(n, omoe_rama, risk_ctx) for n in leaves]

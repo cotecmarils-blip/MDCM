@@ -45,6 +45,10 @@ function TreeItem({
   canAddChild = true,
   grupoPesoInfo = null,
   omoe = null,
+  canMoveUp = false,
+  canMoveDown = false,
+  onMoveUp,
+  onMoveDown,
 }) {
   const hasActualChildren = children && React.Children.count(children) > 0;
   const nodeKey = `${level}-${node.id}`;
@@ -62,6 +66,7 @@ function TreeItem({
   const ramaBadge = dimensionRama ? getRamaMeta(dimensionRama) : null;
   const pendingContext = level === CRITERIO_LEVELS.OMOE ? node : omoe;
   const pending = !inactive && hasNodePendingData(level, node, pendingContext);
+  const showReorder = isNodoArbol && (canMoveUp || canMoveDown);
 
   return (
     <div>
@@ -148,6 +153,41 @@ function TreeItem({
           )}
         </button>
 
+        {showReorder && (
+          <div className="flex flex-col shrink-0 -space-y-0.5">
+            <button
+              type="button"
+              disabled={!canMoveUp}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveUp?.();
+              }}
+              className="p-0.5 text-gray-400 hover:text-navy-800 disabled:opacity-30 disabled:hover:text-gray-400"
+              title="Subir"
+              aria-label="Subir nodo"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                <path d="M6 2.5 2.5 7h7L6 2.5Z" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              disabled={!canMoveDown}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveDown?.();
+              }}
+              className="p-0.5 text-gray-400 hover:text-navy-800 disabled:opacity-30 disabled:hover:text-gray-400"
+              title="Bajar"
+              aria-label="Bajar nodo"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                <path d="M6 9.5 9.5 5h-7L6 9.5Z" />
+              </svg>
+            </button>
+          </div>
+        )}
+
         {canAddChild && (
           <button
             type="button"
@@ -174,7 +214,7 @@ function TreeItem({
 
 function renderNodoSubtree(nodes, ctx) {
   if (!nodes?.length) return null;
-  return nodes.map((node) => {
+  return nodes.map((node, index) => {
     const children = node.hijos || [];
     return (
       <TreeItem
@@ -206,6 +246,10 @@ function renderNodoSubtree(nodes, ctx) {
         )}
         grupoPesoInfo={ctx.gruposPeso?.[String(node.id)]}
         omoe={ctx.omoe}
+        canMoveUp={Boolean(ctx.onReorder) && index > 0}
+        canMoveDown={Boolean(ctx.onReorder) && index < nodes.length - 1}
+        onMoveUp={() => ctx.onReorder?.(nodes.map((n) => n.id), index, index - 1)}
+        onMoveDown={() => ctx.onReorder?.(nodes.map((n) => n.id), index, index + 1)}
         children={renderNodoSubtree(children, {
           ...ctx,
           parentId: node.id,
@@ -271,10 +315,12 @@ function CriteriosTreeSidebar({
   onNewDimension,
   onImportDimension,
   onConfigureNiveles,
+  onReorder,
   loading,
   gruposPeso = {},
 }) {
   const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [reordering, setReordering] = useState(false);
 
   const toggleExpand = (key) => {
     setExpandedIds((prev) => {
@@ -283,6 +329,20 @@ function CriteriosTreeSidebar({
       else next.add(key);
       return next;
     });
+  };
+
+  const handleSiblingReorder = async (ids, fromIndex, toIndex) => {
+    if (!onReorder || reordering) return;
+    if (toIndex < 0 || toIndex >= ids.length) return;
+    const next = [...ids];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    try {
+      setReordering(true);
+      await onReorder(next);
+    } finally {
+      setReordering(false);
+    }
   };
 
   if (loading) {
@@ -365,6 +425,7 @@ function CriteriosTreeSidebar({
                         selection,
                         onSelect,
                         onAddChild,
+                        onReorder: handleSiblingReorder,
                         expandedIds,
                         toggleExpand,
                         parentId: omoe.id,

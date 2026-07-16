@@ -438,6 +438,17 @@ export const evaluacionApi = {
       responseType: 'blob',
       params: { map_weights: includeMapWeights },
     }),
+  startInformeProyectoWord: (proyectoId) =>
+    api.post(`/proyectos/${proyectoId}/informe-proyecto-word/jobs/`),
+  getInformeProyectoWordActivo: (proyectoId) =>
+    api.get(`/proyectos/${proyectoId}/informe-proyecto-word/activo/`),
+  getInformeProyectoWordProgress: (proyectoId, jobId) =>
+    api.get(`/proyectos/${proyectoId}/informe-proyecto-word/jobs/${jobId}/`),
+  downloadInformeProyectoWord: (proyectoId, jobId) =>
+    api.get(
+      `/proyectos/${proyectoId}/informe-proyecto-word/jobs/${jobId}/download/`,
+      { responseType: 'blob' },
+    ),
   getValores: (proyectoId, alternativaId) =>
     api.get(`/proyectos/${proyectoId}/evaluacion/valores/`, {
       params: { alternativa: alternativaId },
@@ -460,6 +471,11 @@ export const simulacionApi = {
     api.get(`/proyectos/${proyectoId}/simulacion/historial/${historialId}/`),
   deleteHistorial: (proyectoId, historialId) =>
     api.delete(`/proyectos/${proyectoId}/simulacion/historial/${historialId}/`),
+  exportInformeResultadosWord: (proyectoId, historialId) =>
+    api.get(
+      `/proyectos/${proyectoId}/simulacion/historial/${historialId}/informe-resultados-word/`,
+      { responseType: 'blob' },
+    ),
   sensibilidad: (proyectoId, body = {}) =>
     api.post(`/proyectos/${proyectoId}/simulacion/sensibilidad/`, body),
 };

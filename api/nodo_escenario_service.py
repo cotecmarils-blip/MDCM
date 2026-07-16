@@ -222,7 +222,7 @@ def get_arbol_config_payload(escenario: Escenario) -> dict[str, Any]:
     nodos = list(
         NodoArbol.objects.filter(omoe_id=escenario.omoe_id)
         .select_related('tipo_nivel')
-        .order_by('orden_visual', 'nombre', 'id')
+        .order_by('orden_visual', 'id')
     )
     seed_arbol_config_for_escenario(escenario)
     configs = {
@@ -382,7 +382,7 @@ def get_nodo_config_payload(escenario: Escenario, nodo_id: int) -> dict[str, Any
 
     hermanos_qs = NodoArbol.objects.filter(
         omoe_id=escenario.omoe_id, parent_id=nodo.parent_id,
-    ).order_by('orden_visual', 'nombre', 'id')
+    ).order_by('orden_visual', 'id')
     hermano_configs = {
         row.nodo_arbol_id: row
         for row in NodoArbolEscenario.objects.filter(

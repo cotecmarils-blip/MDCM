@@ -36,7 +36,7 @@ def _parent_nombre(escenario: Escenario, parent_id: int | None) -> str:
 def _hermanos_payload(escenario: Escenario, parent_id: int | None) -> list[dict[str, Any]]:
     hermanos_qs = NodoArbol.objects.filter(
         omoe_id=escenario.omoe_id, parent_id=parent_id,
-    ).order_by('orden_visual', 'nombre', 'id')
+    ).order_by('orden_visual', 'id')
     configs = {
         row.nodo_arbol_id: row
         for row in NodoArbolEscenario.objects.filter(

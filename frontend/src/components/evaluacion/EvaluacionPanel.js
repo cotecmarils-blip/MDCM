@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { alternativas, evaluacionApi } from '../../api';
 import SplitColumnLayout from '../../layout/SplitColumnLayout';
-import { ModalOverlay } from '../../utils/modalBackdrop';
 import EvaluacionMatrix from './EvaluacionMatrix';
+import ExportablesDropdown from './ExportablesDropdown';
 import { buildDimensionMatrices } from './evaluacionUtils';
 
 function AlternativasEvalSidebar({ items, selectedId, onSelect, loading }) {
@@ -49,6 +49,10 @@ function AlternativasEvalSidebar({ items, selectedId, onSelect, loading }) {
   );
 }
 
+function informeProyectoJobStorageKey(proyectoId) {
+  return `mdcm:informe-proyecto-job:${proyectoId}`;
+}
+
 function EvaluacionPanel({ proyectoId, canWrite = true }) {
   const [alternativasList, setAlternativasList] = useState([]);
   const [schema, setSchema] = useState(null);
@@ -64,7 +68,174 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
   const [exportingCurvasWord, setExportingCurvasWord] = useState(false);
   const [exportingCostos, setExportingCostos] = useState(false);
   const [exportingProyecto, setExportingProyecto] = useState(false);
-  const [proyectoExportModalOpen, setProyectoExportModalOpen] = useState(false);
+  const [proyectoExportProgress, setProyectoExportProgress] = useState(null);
+  const watchGenerationRef = useRef(0);
+
+  const persistInformeJobId = useCallback((jobId) => {
+    try {
+      sessionStorage.setItem(informeProyectoJobStorageKey(proyectoId), String(jobId));
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [proyectoId]);
+
+  const clearPersistedInformeJobId = useCallback(() => {
+    try {
+      sessionStorage.removeItem(informeProyectoJobStorageKey(proyectoId));
+    } catch {
+      /* ignore */
+    }
+  }, [proyectoId]);
+
+  const readPersistedInformeJobId = useCallback(() => {
+    try {
+      return sessionStorage.getItem(informeProyectoJobStorageKey(proyectoId));
+    } catch {
+      return null;
+    }
+  }, [proyectoId]);
+
+  const downloadInformeProyectoBlob = useCallback(async (jobId) => {
+    const res = await evaluacionApi.downloadInformeProyectoWord(proyectoId, jobId);
+    const blob = res.data instanceof Blob
+      ? res.data
+      : new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+    if (blob.type && blob.type.includes('json')) {
+      const text = await blob.text();
+      const parsed = JSON.parse(text);
+      throw new Error(parsed.detail || 'No se pudo generar el informe de proyecto.');
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `informe-proyecto-${proyectoId}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [proyectoId]);
+
+  const watchInformeProyectoJob = useCallback(async (jobId, initialStatus = null) => {
+    const generation = ++watchGenerationRef.current;
+    const stillActive = () => generation === watchGenerationRef.current;
+
+    persistInformeJobId(jobId);
+    setExportingProyecto(true);
+    setError(null);
+    if (initialStatus) {
+      setProyectoExportProgress({
+        porcentaje: initialStatus.progreso ?? 0,
+        etapa: initialStatus.etapa || 'Generando informe…',
+      });
+    } else {
+      setProyectoExportProgress({ porcentaje: 0, etapa: 'Reanudando generación…' });
+    }
+
+    try {
+      let statusData = initialStatus;
+      if (!statusData || !['completed', 'error'].includes(statusData.estado)) {
+        if (!statusData) {
+          const { data } = await evaluacionApi.getInformeProyectoWordProgress(
+            proyectoId,
+            jobId,
+          );
+          if (!stillActive()) return;
+          statusData = data;
+          setProyectoExportProgress({
+            porcentaje: data.progreso,
+            etapa: data.etapa,
+          });
+        }
+
+        while (!['completed', 'error'].includes(statusData.estado)) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (!stillActive()) return;
+          const { data } = await evaluacionApi.getInformeProyectoWordProgress(
+            proyectoId,
+            jobId,
+          );
+          if (!stillActive()) return;
+          statusData = data;
+          setProyectoExportProgress({
+            porcentaje: data.progreso,
+            etapa: data.etapa,
+          });
+        }
+      }
+
+      if (!stillActive()) return;
+
+      if (statusData.estado === 'error') {
+        clearPersistedInformeJobId();
+        throw new Error(statusData.error || 'No se pudo generar el informe de proyecto.');
+      }
+
+      await downloadInformeProyectoBlob(jobId);
+      if (!stillActive()) return;
+      clearPersistedInformeJobId();
+    } catch (err) {
+      if (!stillActive()) return;
+      console.error(err);
+      setError(err.message || 'No se pudo exportar el Word del proyecto.');
+      clearPersistedInformeJobId();
+    } finally {
+      if (stillActive()) {
+        setExportingProyecto(false);
+        setProyectoExportProgress(null);
+      }
+    }
+  }, [
+    clearPersistedInformeJobId,
+    downloadInformeProyectoBlob,
+    persistInformeJobId,
+    proyectoId,
+  ]);
+
+  // Al volver al módulo, restaurar la barra si el job sigue en curso.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data: activo } = await evaluacionApi.getInformeProyectoWordActivo(proyectoId);
+        if (cancelled) return;
+        if (activo?.activo && activo.job_id) {
+          await watchInformeProyectoJob(activo.job_id, activo);
+          return;
+        }
+      } catch (err) {
+        console.error(err);
+      }
+
+      const storedJobId = readPersistedInformeJobId();
+      if (cancelled || !storedJobId) return;
+
+      try {
+        const { data } = await evaluacionApi.getInformeProyectoWordProgress(
+          proyectoId,
+          storedJobId,
+        );
+        if (cancelled) return;
+        if (['pending', 'processing', 'completed'].includes(data.estado)) {
+          await watchInformeProyectoJob(storedJobId, data);
+        } else {
+          clearPersistedInformeJobId();
+        }
+      } catch {
+        clearPersistedInformeJobId();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      watchGenerationRef.current += 1;
+    };
+  }, [
+    clearPersistedInformeJobId,
+    proyectoId,
+    readPersistedInformeJobId,
+    watchInformeProyectoJob,
+  ]);
 
   const handleExportCurvas = async () => {
     try {
@@ -141,35 +312,18 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
     }
   };
 
-  const handleExportProyectoWord = async (includeMapWeights) => {
-    setProyectoExportModalOpen(false);
+  const handleExportProyectoWord = async () => {
+    if (exportingProyecto) return;
     try {
       setExportingProyecto(true);
-      const res = await evaluacionApi.exportInformeProyectoWord(
-        proyectoId,
-        includeMapWeights,
-      );
-      const blob = res.data instanceof Blob
-        ? res.data
-        : new Blob([res.data], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        });
-      if (blob.type && blob.type.includes('json')) {
-        const text = await blob.text();
-        const parsed = JSON.parse(text);
-        throw new Error(parsed.detail || 'No se pudo generar el informe de proyecto.');
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `informe-proyecto-${proyectoId}.docx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      setProyectoExportProgress({ porcentaje: 0, etapa: 'Iniciando generación' });
+      const { data: started } = await evaluacionApi.startInformeProyectoWord(proyectoId);
+      await watchInformeProyectoJob(started.job_id, started);
     } catch (err) {
       console.error(err);
       setError(err.message || 'No se pudo exportar el Word del proyecto.');
-    } finally {
       setExportingProyecto(false);
+      setProyectoExportProgress(null);
     }
   };
 
@@ -333,50 +487,75 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
           <p className="text-xs text-gray-600 dark:text-gray-400 max-w-xl leading-snug">
             Flujo de costos (OMOC): carga el valor <strong>x</strong> bruto por ítem;
             se suma sin curvas ni pesos de escenario. Use «Exportar costos (Word)»
-            para el informe de Felipe (escenario Estandar o Escenario base + desglose).
+            para el informe OMOC (escenario Estandar y desglose por ítem).
           </p>
         ) : (
           <span />
         )}
         <div className="flex flex-wrap items-center gap-2 ml-auto">
-          <button
-            type="button"
-            onClick={() => setProyectoExportModalOpen(true)}
-            disabled={exportingProyecto || loadingSchema}
-            className="btn btn-primary text-sm py-1.5 px-3 disabled:opacity-50"
-            title="Informe integral: proyecto, alternativas, árboles/pesos y evaluaciones"
-          >
-            {exportingProyecto ? 'Generando Word…' : 'Informe proyecto (Word)'}
-          </button>
-          <button
-            type="button"
-            onClick={handleExportCostosWord}
-            disabled={exportingCostos || loadingSchema}
-            className="btn btn-primary text-sm py-1.5 px-3 disabled:opacity-50"
-            title="Informe Word OMOC con escenario Estandar (suma sin pesos de escenario)"
-          >
-            {exportingCostos ? 'Generando Word…' : 'Exportar costos (Word)'}
-          </button>
-          <button
-            type="button"
-            onClick={handleExportCurvasWord}
-            disabled={exportingCurvasWord || loadingSchema}
-            className="btn btn-secondary text-sm py-1.5 px-3 disabled:opacity-50"
-            title="Curvas finales por nodo terminal y escenario (Word)"
-          >
-            {exportingCurvasWord ? 'Generando Word…' : 'Exportar curvas (Word)'}
-          </button>
-          <button
-            type="button"
-            onClick={handleExportCurvas}
-            disabled={exportingCurvas || loadingSchema}
-            className="btn btn-secondary text-sm py-1.5 px-3 disabled:opacity-50"
-            title="Curvas finales por nodo terminal y misión (JSON)"
-          >
-            {exportingCurvas ? 'Exportando…' : 'Exportar curvas (JSON)'}
-          </button>
+          <ExportablesDropdown
+            label={
+              exportingProyecto
+                ? `Generando ${proyectoExportProgress?.porcentaje ?? 0}%`
+                : 'Exportables'
+            }
+            disabled={loadingSchema}
+            items={[
+              {
+                key: 'informe-proyecto',
+                label: exportingProyecto
+                  ? `Informe proyecto (Word) · ${proyectoExportProgress?.porcentaje ?? 0}%`
+                  : 'Informe proyecto (Word)',
+                description:
+                  'Informe integral: árbol estándar sin pesos y escenarios con pesos, alternativas y evaluaciones.',
+                onClick: handleExportProyectoWord,
+                disabled: exportingProyecto || loadingSchema,
+              },
+              {
+                key: 'costos-word',
+                label: exportingCostos ? 'Generando costos…' : 'Exportar costos (Word)',
+                description:
+                  'Informe OMOC con escenario Estandar (suma sin pesos de escenario).',
+                onClick: handleExportCostosWord,
+                disabled: exportingCostos || loadingSchema,
+              },
+              {
+                key: 'curvas-word',
+                label: exportingCurvasWord ? 'Generando curvas…' : 'Exportar curvas (Word)',
+                description: 'Curvas finales por nodo terminal y escenario (Word).',
+                onClick: handleExportCurvasWord,
+                disabled: exportingCurvasWord || loadingSchema,
+              },
+              {
+                key: 'curvas-json',
+                label: exportingCurvas ? 'Exportando…' : 'Exportar curvas (JSON)',
+                description: 'Curvas finales por nodo terminal y misión (JSON).',
+                onClick: handleExportCurvas,
+                disabled: exportingCurvas || loadingSchema,
+              },
+            ]}
+          />
         </div>
       </div>
+      {exportingProyecto && proyectoExportProgress && (
+        <div className="px-3 sm:px-4 pt-2 shrink-0" role="status" aria-live="polite">
+          <div className="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300 mb-1">
+            <span>{proyectoExportProgress.etapa}</span>
+            <span className="font-semibold tabular-nums">
+              {proyectoExportProgress.porcentaje}%
+            </span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-navy-800">
+            <div
+              className="h-full rounded-full bg-navy-600 transition-[width] duration-500"
+              style={{ width: `${proyectoExportProgress.porcentaje}%` }}
+            />
+          </div>
+          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+            Puede continuar trabajando; la descarga comenzará automáticamente al finalizar.
+          </p>
+        </div>
+      )}
       <SplitColumnLayout
         title="Evaluación"
         description="Variable x por alternativa, escenario y criterio terminal."
@@ -395,70 +574,6 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
         right={rightContent()}
       />
 
-      {proyectoExportModalOpen && (
-        <ModalOverlay onClose={() => !exportingProyecto && setProyectoExportModalOpen(false)}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="informe-proyecto-export-title"
-            className="bg-white dark:bg-navy-900 rounded-xl shadow-xl max-w-md w-full border border-gray-200 dark:border-navy-800/80 p-5 space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div>
-              <h3
-                id="informe-proyecto-export-title"
-                className="text-lg font-bold text-gray-800 dark:text-gray-100"
-              >
-                Exportar informe de proyecto
-              </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Elija si las gráficas de los árboles incluirán los pesos.
-                Se genera un solo mapa por escenario.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={exportingProyecto}
-                onClick={() => handleExportProyectoWord(false)}
-                className="text-left px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700/60 hover:border-navy-500 hover:bg-navy-500/5 transition-colors disabled:opacity-50"
-              >
-                <span className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
-                  Sin pesos
-                </span>
-                <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Solo estructura del árbol
-                </span>
-              </button>
-              <button
-                type="button"
-                disabled={exportingProyecto}
-                onClick={() => handleExportProyectoWord(true)}
-                className="text-left px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700/60 hover:border-navy-500 hover:bg-navy-500/5 transition-colors disabled:opacity-50"
-              >
-                <span className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
-                  Con pesos
-                </span>
-                <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Estructura + pesos en cada nodo
-                </span>
-              </button>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                type="button"
-                disabled={exportingProyecto}
-                onClick={() => setProyectoExportModalOpen(false)}
-                className="btn-sm border-gray-200 dark:border-gray-700/60 disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </ModalOverlay>
-      )}
     </div>
   );
 }

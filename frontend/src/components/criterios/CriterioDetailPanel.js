@@ -47,6 +47,7 @@ function CriterioDetailPanel({
   const [, setEscenarioDirty] = useState(false);
   const [escenarioCanSave, setEscenarioCanSave] = useState(false);
   const escenarioRef = useRef(null);
+  const submittingRef = useRef(false);
 
   const dimensionRama = resolveDimensionRama(selection);
   const omoeId = (() => {
@@ -99,6 +100,7 @@ function CriterioDetailPanel({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submittingRef.current || loading) return;
 
     const hasEscenario =
       level === CRITERIO_LEVELS.NODO_ARBOL
@@ -112,6 +114,7 @@ function CriterioDetailPanel({
     }
 
     try {
+      submittingRef.current = true;
       setLoading(true);
       setError(null);
 
@@ -141,14 +144,16 @@ function CriterioDetailPanel({
           await nodeApi.update(item.id, payload);
         } else {
           const res = await nodeApi.create(payload);
-          onSaved({ level, id: res.data.id, omoeId });
+          // Esperar el refresco del árbol: si no, el botón vuelve a "Crear"
+          // y un segundo clic duplica el nodo.
+          await onSaved({ level, id: res.data.id, omoeId });
           setViewMode(true);
           setNodeDirty(false);
           return;
         }
       }
 
-      onSaved({
+      await onSaved({
         level,
         id: item.id,
         omoeId,
@@ -172,6 +177,7 @@ function CriterioDetailPanel({
       });
       setError(flat[0] || data.detail || 'Error al guardar');
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -259,7 +265,12 @@ function CriterioDetailPanel({
         </>
       )}
       {isCreate && onCancel && (
-        <button type="button" onClick={onCancel} className="btn-sm border-gray-200 dark:border-gray-700/60">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={loading}
+          className="btn-sm border-gray-200 dark:border-gray-700/60 disabled:opacity-50"
+        >
           Cancelar
         </button>
       )}

@@ -63,7 +63,9 @@ function SimulacionResultados({
             {resultado.descripcion}
           </p>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {showGraficos && !soloMatriz && <SimulacionExportButtons resultado={resultado} />}
+            {showGraficos && !soloMatriz && (
+              <SimulacionExportButtons resultado={resultado} proyectoId={proyectoId} />
+            )}
             {!soloMatriz && <SimulacionOpcionesDropdown resultado={resultado} />}
           </div>
         </div>
@@ -185,7 +187,7 @@ function SimulacionResultados({
                     className="border-t border-gray-100 dark:border-gray-800/80 cursor-pointer hover:bg-navy-500/5 transition"
                   >
                     <td className="px-3 py-2 font-bold text-navy-600">
-                      {alt.excluida_pareto ? '���' : alt.ranking}
+                      {alt.excluida_pareto ? '—' : alt.ranking}
                     </td>
                     <td className="px-3 py-2 font-medium">
                       {alt.nombre}
@@ -631,13 +633,13 @@ function SimulacionesPanel({ proyectoId, canWrite = true }) {
                           <td className="px-3 py-2 text-xs whitespace-nowrap">
                             {TIPO_LABELS[f.tipo] || f.tipo}
                           </td>
-                          <td className="px-3 py-2">{f.alternativa_nombre || '���'}</td>
-                          <td className="px-3 py-2">{f.dimension || '���'}</td>
-                          <td className="px-3 py-2">{f.escenario || '���'}</td>
-                          <td className="px-3 py-2">{f.criterio || '���'}</td>
+                          <td className="px-3 py-2">{f.alternativa_nombre || '—'}</td>
+                          <td className="px-3 py-2">{f.dimension || '—'}</td>
+                          <td className="px-3 py-2">{f.escenario || '—'}</td>
+                          <td className="px-3 py-2">{f.criterio || '—'}</td>
                           <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{f.detalle}</td>
                           <td className="px-3 py-2 text-xs text-navy-600 dark:text-navy-400">
-                            {f.modulo || '���'}
+                            {f.modulo || '—'}
                           </td>
                         </tr>
                       ))}

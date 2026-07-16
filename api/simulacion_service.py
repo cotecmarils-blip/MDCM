@@ -1365,6 +1365,9 @@ def _calcular_dimension_con_resumen_escenarios(
             'escenario_id': esc.id,
             'nombre': esc.nombre or f'Escenario {esc.id}',
             'valor': _round6(valor_esc),
+            # Conserva la traza para informes científicos y auditoría. La
+            # selección final sigue usando únicamente ``valor``.
+            'detalle': _det,
         })
         _sim_log(
             debug_logs,

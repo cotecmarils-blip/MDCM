@@ -404,6 +404,7 @@ function CriteriosPanel({ proyectoId }) {
               onNewDimension={handleNewDimension}
               onImportDimension={handleOpenImportDimension}
               onConfigureNiveles={() => setConfigOpen(true)}
+              onReorder={handleReorderNodes}
               loading={loading}
               gruposPeso={gruposPeso}
             />

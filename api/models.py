@@ -1,4 +1,5 @@
 from decimal import Decimal
+import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -916,7 +917,7 @@ class NodoArbol(models.Model):
     class Meta:
         verbose_name = 'Nodo del árbol'
         verbose_name_plural = 'Nodos del árbol'
-        ordering = ['orden_visual', 'nombre', 'id']
+        ordering = ['orden_visual', 'id']
 
     @property
     def parent_id_prop(self):
@@ -1455,7 +1456,7 @@ class EventoDecisionNodo(models.Model):
                 name='uniq_evento_nodo_auditoria',
             ),
         ]
-        ordering = ['nodo__orden_visual', 'nodo__nombre', 'id']
+        ordering = ['nodo__orden_visual', 'nodo__id']
 
     def __str__(self):
         return f'{self.evento_id} · {self.nodo_id}'
@@ -1516,3 +1517,49 @@ class EventoDecisionRegistro(models.Model):
 
     def __str__(self):
         return f'{self.evento_id} · {self.tipo_cambio} · {self.entidad_nombre}'
+
+
+class InformeProyectoJob(models.Model):
+    """Estado persistente de una generación asíncrona del informe Word."""
+
+    ESTADO_PENDIENTE = 'pending'
+    ESTADO_PROCESANDO = 'processing'
+    ESTADO_COMPLETADO = 'completed'
+    ESTADO_ERROR = 'error'
+    ESTADO_CHOICES = [
+        (ESTADO_PENDIENTE, 'Pendiente'),
+        (ESTADO_PROCESANDO, 'Procesando'),
+        (ESTADO_COMPLETADO, 'Completado'),
+        (ESTADO_ERROR, 'Error'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    proyecto = models.ForeignKey(
+        Proyecto, on_delete=models.CASCADE, related_name='informe_proyecto_jobs',
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='informe_proyecto_jobs',
+    )
+    estado = models.CharField(
+        max_length=16, choices=ESTADO_CHOICES, default=ESTADO_PENDIENTE,
+    )
+    progreso = models.PositiveSmallIntegerField(default=0)
+    etapa = models.CharField(max_length=160, default='Preparando generación')
+    incluir_pesos_mapas = models.BooleanField(default=False)
+    archivo = models.FileField(
+        upload_to='informes_proyecto/%Y/%m/%d/',
+        max_length=255,
+        null=True,
+        blank=True,
+    )
+    error = models.TextField(blank=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-fecha_creacion']
+
+    def __str__(self):
+        return f'{self.proyecto_id} · {self.estado} · {self.progreso}%'

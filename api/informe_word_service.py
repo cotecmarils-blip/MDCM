@@ -4,7 +4,7 @@ from __future__ import annotations
 from io import BytesIO
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from django.conf import settings
 from docx import Document
@@ -22,6 +22,7 @@ from .evaluacion_service import (
     build_evaluacion_schema,
     load_valores_map,
 )
+from .informe_math import add_latex_equation, tex_text
 from .models import Alternativa, Escenario, NodoArbol, Omoe, Proyecto
 
 
@@ -74,9 +75,48 @@ def _find_logo(*names: str) -> Path | None:
     return None
 
 
+_HEADER_LOGO_NAVY = (0x0F, 0x2C, 0x59)
+
+
+def _logo_stream_for_header(logo_path: Path) -> BytesIO:
+    """Convierte cualquier logo a tono navy uniforme (misma paleta en el encabezado)."""
+    navy = _HEADER_LOGO_NAVY
+    with Image.open(logo_path) as img:
+        img = img.convert('RGBA')
+        pixels = img.load()
+        out = Image.new('RGBA', img.size, (0, 0, 0, 0))
+        out_pixels = out.load()
+        for y in range(img.height):
+            for x in range(img.width):
+                r, g, b, a = pixels[x, y]
+                if a < 16:
+                    continue
+                if r > 248 and g > 248 and b > 248:
+                    continue
+                lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+                if lum > 0.97:
+                    continue
+                alpha_out = int(a * min(1.0, max(0.45, 1.15 - lum)))
+                out_pixels[x, y] = (*navy, alpha_out)
+        buf = BytesIO()
+        out.save(buf, format='PNG')
+        buf.seek(0)
+        return buf
+
+
 DOCUMENT_FONT = 'Arial'
 DOCUMENT_FONT_SIZE = 11
 TABLE_FONT_SIZE = 9
+_REPORT_TABLE_WIDTH_CM = 16.8
+_REPORT_PAGE_USABLE_CM = 17.5
+_REPORT_PACKING_BUFFER_CM = 0.9
+# Si tras una tabla queda menos que esto, la página se considera llena:
+# evita arrancar otra tabla en un residuo que en la práctica no alcanza.
+_REPORT_MIN_REMAINING_TO_PACK_CM = 7.5
+# Si la estimación supera la página por menos que esto, en Word casi siempre
+# cabía en UNA página: no inventar un "residuo" en la página siguiente.
+_REPORT_NEAR_PAGE_OVERFLOW_CM = 7.5
+_CHARS_PER_CM_AT_TABLE_FONT = 5.2
 
 
 def _set_run_font(run, *, size_pt=DOCUMENT_FONT_SIZE, bold=False, color=None):
@@ -107,6 +147,157 @@ def _setup_document_fonts(doc: Document) -> None:
         rFonts.set(qn('w:ascii'), DOCUMENT_FONT)
         rFonts.set(qn('w:hAnsi'), DOCUMENT_FONT)
         rFonts.set(qn('w:cs'), DOCUMENT_FONT)
+
+
+def _cell_max_line_len(text: Any) -> int:
+    parts = str(text or '—').splitlines() or ['—']
+    return max((len(part) for part in parts), default=1)
+
+
+def _column_content_weights(
+    headers: list[str],
+    rows: list[list[Any]],
+) -> list[float]:
+    """Peso por columna según el contenido más largo (cabecera o celdas)."""
+    column_count = max(len(headers), 1)
+    weights: list[float] = []
+    for col_idx in range(column_count):
+        samples = [_cell_max_line_len(headers[col_idx] if col_idx < len(headers) else '')]
+        for row in rows or []:
+            if col_idx < len(row):
+                samples.append(_cell_max_line_len(row[col_idx]))
+            else:
+                samples.append(1)
+        # Cabeceras largas no deben forzar columnas enormes si el cuerpo es corto.
+        body_max = max(samples[1:], default=1)
+        header_len = samples[0]
+        effective = max(body_max, min(header_len, max(body_max + 4, 12)))
+        # Raíz suave: columnas cortas siguen estrechas; las largas ganan espacio.
+        weights.append(max(3.0, math.sqrt(effective) * 2.4))
+    return weights
+
+
+def _compute_column_widths_cm(
+    headers: list[str],
+    rows: list[list[Any]],
+    *,
+    total_width_cm: float = _REPORT_TABLE_WIDTH_CM,
+) -> list[float]:
+    """Anchos fijos proporcionales al contenido, con mínimo y redistribución."""
+    weights = _column_content_weights(headers, rows)
+    column_count = len(weights)
+    if column_count == 0:
+        return []
+    min_cm = min(1.15, total_width_cm / max(column_count * 1.35, 1))
+    max_cm = max(min_cm + 0.4, total_width_cm * 0.42)
+    total_weight = sum(weights) or float(column_count)
+    widths = [total_width_cm * weight / total_weight for weight in weights]
+
+    # Asegura mínimos quitando ancho de las columnas más generosas.
+    for _ in range(column_count * 2):
+        deficit = 0.0
+        donors: list[int] = []
+        for idx, width in enumerate(widths):
+            if width < min_cm:
+                deficit += min_cm - width
+                widths[idx] = min_cm
+            elif width > min_cm + 0.25:
+                donors.append(idx)
+        if deficit <= 1e-9 or not donors:
+            break
+        donor_extra = sum(widths[i] - min_cm for i in donors)
+        if donor_extra <= 1e-9:
+            break
+        for idx in donors:
+            share = (widths[idx] - min_cm) / donor_extra
+            widths[idx] = max(min_cm, widths[idx] - deficit * share)
+
+    # Limita máximos y reparte el sobrante.
+    overflow = 0.0
+    receivers: list[int] = []
+    for idx, width in enumerate(widths):
+        if width > max_cm:
+            overflow += width - max_cm
+            widths[idx] = max_cm
+        elif width < max_cm - 0.2:
+            receivers.append(idx)
+    if overflow > 1e-9 and receivers:
+        room = sum(max_cm - widths[i] for i in receivers)
+        if room > 1e-9:
+            for idx in receivers:
+                share = (max_cm - widths[idx]) / room
+                widths[idx] = min(max_cm, widths[idx] + overflow * share)
+
+    # Normaliza a exactamente el ancho útil de página.
+    scale = total_width_cm / max(sum(widths), 1e-9)
+    return [round(width * scale, 3) for width in widths]
+
+
+def _apply_column_widths(table, widths_cm: list[float]) -> None:
+    """Fija anchos de columna (desactiva autofit igualitario de Word)."""
+    if not widths_cm:
+        return
+    table.autofit = False
+    try:
+        table.allow_autofit = False
+    except AttributeError:
+        pass
+
+    tbl = table._tbl
+    tbl_pr = tbl.tblPr if tbl.tblPr is not None else OxmlElement('w:tblPr')
+    if tbl.tblPr is None:
+        tbl.insert(0, tbl_pr)
+
+    layout = tbl_pr.find(qn('w:tblLayout'))
+    if layout is None:
+        layout = OxmlElement('w:tblLayout')
+        tbl_pr.append(layout)
+    layout.set(qn('w:type'), 'fixed')
+
+    total_twips = str(int(sum(widths_cm) * 567))  # ~567 twips/cm
+    tbl_w = tbl_pr.find(qn('w:tblW'))
+    if tbl_w is None:
+        tbl_w = OxmlElement('w:tblW')
+        tbl_pr.append(tbl_w)
+    tbl_w.set(qn('w:w'), total_twips)
+    tbl_w.set(qn('w:type'), 'dxa')
+
+    # Márgenes internos compactos para ganar espacio útil de texto.
+    cell_margin_dxa = '40'  # ~0.07 cm
+    for row in table.rows:
+        for idx, cell in enumerate(row.cells):
+            if idx >= len(widths_cm):
+                break
+            width_cm = widths_cm[idx]
+            cell.width = Cm(width_cm)
+            tc_pr = cell._tc.get_or_add_tcPr()
+            tc_w = tc_pr.find(qn('w:tcW'))
+            if tc_w is None:
+                tc_w = OxmlElement('w:tcW')
+                tc_pr.append(tc_w)
+            tc_w.set(qn('w:w'), str(int(width_cm * 567)))
+            tc_w.set(qn('w:type'), 'dxa')
+            tc_mar = tc_pr.find(qn('w:tcMar'))
+            if tc_mar is None:
+                tc_mar = OxmlElement('w:tcMar')
+                tc_pr.append(tc_mar)
+            for edge in ('top', 'left', 'bottom', 'right'):
+                node = tc_mar.find(qn(f'w:{edge}'))
+                if node is None:
+                    node = OxmlElement(f'w:{edge}')
+                    tc_mar.append(node)
+                node.set(qn('w:w'), cell_margin_dxa)
+                node.set(qn('w:type'), 'dxa')
+
+
+def _table_matrix_from_docx(table) -> tuple[list[str], list[list[str]]]:
+    rows_text = [
+        [cell.text for cell in row.cells]
+        for row in table.rows
+    ]
+    if not rows_text:
+        return [], []
+    return rows_text[0], rows_text[1:]
 
 
 def _apply_table_borders(
@@ -157,8 +348,15 @@ def _finalize_report_table(
     header_bold: bool = True,
     internal_vertical: bool = True,
 ) -> None:
+    headers, body_rows = _table_matrix_from_docx(table)
+    _apply_column_widths(table, _compute_column_widths_cm(headers, body_rows))
     _apply_table_borders(table, internal_vertical=internal_vertical)
     rows = table.rows
+    # Si la tabla cabe en una página, forzar que Word no la parta a medias.
+    # Solo las que exceden una página completa pueden cortarse entre filas.
+    keep_table_together = (
+        _estimate_table_height_cm(headers, body_rows) <= _REPORT_PAGE_USABLE_CM
+    )
     for row_idx, row in enumerate(rows):
         tr_pr = row._tr.get_or_add_trPr()
         if tr_pr.find(qn('w:cantSplit')) is None:
@@ -167,9 +365,10 @@ def _finalize_report_table(
         for cell in row.cells:
             for paragraph in cell.paragraphs:
                 paragraph.paragraph_format.keep_together = True
-                # Mantener todas las filas juntas para no partir la tabla, pero
-                # sin encadenar con lo que venga después (deja respirar el bloque).
-                paragraph.paragraph_format.keep_with_next = row_idx < len(rows) - 1
+                if keep_table_together:
+                    paragraph.paragraph_format.keep_with_next = row_idx < len(rows) - 1
+                else:
+                    paragraph.paragraph_format.keep_with_next = row_idx == 0
                 if not paragraph.runs and paragraph.text:
                     content = paragraph.text
                     paragraph.clear()
@@ -206,49 +405,151 @@ def _estimate_table_height_cm(
     *,
     extra_heading_count: int = 0,
 ) -> float:
-    """Estimación sesgada a ALTO: preferimos saltar de página a partir una tabla."""
-    column_count = max(len(headers), 1)
-    # Con muchas columnas el texto de descripción se parte en más líneas.
-    chars_per_line = max(10, int(88 / column_count))
+    """Estimación realista con margen leve: empaca si cabe; no parte a medias.
+
+    Debe permitir que dos tablas cortas (p. ej. Cost + Risk, 3 filas) compartan
+    página, y a la vez no subestimar tablas densas de ~11 filas.
+    """
+    body_rows = rows or [['—']]
+    widths = _compute_column_widths_cm(headers, body_rows)
 
     def row_height(values: list[Any], *, header: bool = False) -> float:
         max_lines = 1
-        for value in values:
+        for col_idx, value in enumerate(values):
+            width_cm = widths[col_idx] if col_idx < len(widths) else (
+                _REPORT_TABLE_WIDTH_CM / max(len(headers), 1)
+            )
+            chars_per_line = max(7, int(width_cm * _CHARS_PER_CM_AT_TABLE_FONT))
             text = str(value or '—')
             lines = sum(
                 max(1, math.ceil(len(part) / chars_per_line))
                 for part in text.splitlines() or ['']
             )
             max_lines = max(max_lines, min(lines, 6))
-        line_height = 0.48 if header else 0.44
-        return max(0.72, max_lines * line_height + 0.22)
+        line_height = 0.42 if header else 0.38
+        return max(0.55 if header else 0.50, max_lines * line_height + 0.12)
 
-    body_rows = rows or [['—']]
     table_height = row_height(headers, header=True)
     table_height += sum(row_height(list(row)) for row in body_rows)
-    chrome_cm = 1.2 + extra_heading_count * 0.85
+    chrome_cm = 1.05 + extra_heading_count * 0.72
     raw = table_height + chrome_cm
-    # Multiplicador suave + piso por fila para no subestimar tablas densas.
-    return max(raw * 1.12, 1.1 + 0.78 * (1 + len(body_rows)) + chrome_cm)
+    # Tablas densas: margen extra moderado (sin empujarlas artificialmente a >1 página).
+    if len(body_rows) >= 8:
+        raw += 0.9 + 0.06 * (len(body_rows) - 8)
+    return max(raw * 1.08, 0.9 + 0.55 * (1 + len(body_rows)) + chrome_cm)
 
 
-def _begin_table_block(doc: Document, estimated_height_cm: float = 8.0) -> None:
-    """Agrupa tablas cortas solo si la siguiente cabe COMPLETA; si no, nueva página."""
-    usable_height_cm = 17.5
-    packing_buffer_cm = 0.8
+def _estimate_evaluation_table_height_cm(
+    headers: list[str],
+    rows: list[list[Any]],
+    *,
+    extra_heading_count: int = 0,
+) -> float:
+    """Estimación para matrices de Etapa 2 (sigue sesgada a no partir bloques)."""
+    column_count = max(len(headers), 1)
+    chars_per_line = max(10, int(88 / column_count))
+
+    def lines_for(values: list[Any]) -> int:
+        return max(
+            (
+                max(1, math.ceil(len(str(value or '—')) / chars_per_line))
+                for value in values
+            ),
+            default=1,
+        )
+
+    header_height = max(0.68, min(lines_for(headers), 4) * 0.42 + 0.20)
+    body_height = sum(
+        max(0.62, min(lines_for(list(row)), 4) * 0.40 + 0.18)
+        for row in (rows or [['—']])
+    )
+    return header_height + body_height + 0.95 + extra_heading_count * 0.65
+
+
+def _page_used_after_block(
+    used_before_cm: float,
+    block_height_cm: float,
+    *,
+    min_remaining_cm: float | None = None,
+) -> float:
+    """Altura ocupada en la ÚLTIMA página tras colocar un bloque.
+
+    Caso crítico (Tabla 7 ≈1 página, estimación 17.6–19 cm):
+    el overflow módulo página dejaba ~0.3–1.5 cm "usados" en una página
+    siguiente inventada. Cost creía caber ahí, pero en Word seguía en la
+    misma hoja bajo Effectiveness y se partía. Si el exceso sobre una página
+    es pequeño, se marca la página como llena.
+
+    `min_remaining_cm` permite empaquetar figuras pequeñas (varias por hoja)
+    con un umbral menor que el de las tablas.
+    """
+    usable = _REPORT_PAGE_USABLE_CM
+    if min_remaining_cm is None:
+        min_remaining_cm = _REPORT_MIN_REMAINING_TO_PACK_CM
+    remaining = max(0.0, usable - used_before_cm)
+
+    if block_height_cm <= remaining + 1e-9:
+        used = used_before_cm + block_height_cm
+    elif used_before_cm <= 0.05:
+        # Arranca al tope: ¿cabe en una página real o solo "casi"?
+        overflow = block_height_cm - usable
+        if overflow <= _REPORT_NEAR_PAGE_OVERFLOW_CM:
+            # En la práctica es una sola página llena (no residuo fantasma).
+            return usable
+        remainder = overflow % usable
+        used = usable if remainder <= 1e-9 else remainder
+    else:
+        # No debería ocurrir: _begin_table_block ya debió saltar de página.
+        used = min(usable, block_height_cm)
+
+    leftover = usable - used
+    if 0 < leftover < min_remaining_cm:
+        return usable
+    return used
+
+
+def _begin_table_block(
+    doc: Document,
+    estimated_height_cm: float = 8.0,
+    *,
+    min_remaining_cm: float | None = None,
+    buffer_cm: float | None = None,
+) -> None:
+    """Regla: título + tabla solo si caben COMPLETOS en el residuo actual.
+
+    1) remaining = página usable − ya usado (contador virtual).
+    2) Si estimated + buffer > remaining → page break (salvo página vacía).
+    3) Actualizar usado; si el residuo queda < MIN_REMAINING → página llena.
+
+    `min_remaining_cm`/`buffer_cm` se pueden bajar para figuras y así permitir
+    3+ gráficos pequeños por hoja (las tablas conservan sus valores mayores).
+    """
+    usable = _REPORT_PAGE_USABLE_CM
+    if buffer_cm is None:
+        buffer_cm = _REPORT_PACKING_BUFFER_CM
+    if min_remaining_cm is None:
+        min_remaining_cm = _REPORT_MIN_REMAINING_TO_PACK_CM
     used_height_cm = getattr(doc, '_report_table_page_used_cm', None)
     if used_height_cm is None:
-        # Reserva para título de sección u otro contenido previo de la primera página.
         used_height_cm = 2.8
-    # Si el bloque no cabe entero en lo que queda, va a página nueva.
-    if used_height_cm + estimated_height_cm + packing_buffer_cm > usable_height_cm:
+
+    remaining_cm = usable - used_height_cm
+    # Residuo útil mínimo: no arrancar en un hueco donde solo entra 1 fila.
+    fits_completely = (
+        estimated_height_cm + buffer_cm <= remaining_cm
+        and remaining_cm >= min_remaining_cm
+    )
+
+    if not fits_completely and used_height_cm > 0.05:
         doc.add_page_break()
         used_height_cm = 0.0
-    # Tras una tabla grande, la página queda “llena” aunque el estimado exceda el útil.
+
     setattr(
         doc,
         '_report_table_page_used_cm',
-        min(usable_height_cm, used_height_cm + estimated_height_cm),
+        _page_used_after_block(
+            used_height_cm, estimated_height_cm, min_remaining_cm=min_remaining_cm,
+        ),
     )
     setattr(doc, '_report_table_blocks', getattr(doc, '_report_table_blocks', 0) + 1)
 
@@ -280,31 +581,39 @@ def _add_table_caption(
 def _add_header_logos(
     document: Document,
     *,
-    subtitle_text: str = (
-        'ENAP · Cotecmar · Universidad de la Costa  |  HATD — Informe de costos (OMOC)'
-    ),
+    subtitle_text: str | None = None,
 ) -> None:
-    """Encabezado con logos alineados: misma altura y tono navy (sin mezcla de colores)."""
+    """Encabezado compacto: logos navy en una fila y línea horizontal pegada debajo."""
     from docx.enum.table import WD_TABLE_ALIGNMENT
     from docx.oxml import OxmlElement
 
     section = document.sections[0]
+    # Acerca el encabezado al borde superior y deja libre el margen del cuerpo.
+    section.header_distance = Cm(0.45)
     header = section.header
     header.is_linked_to_previous = False
     for p in list(header.paragraphs):
-        p.clear()
+        # Word crea un párrafo vacío antes de la tabla del encabezado. Eliminar
+        # el nodo completo evita el salto de línea visible antes de los logos.
+        element = p._element
+        element.getparent().remove(element)
 
+    # ENAP = emblema real de la Escuela Naval (los archivos "Logo_ENAP*.png"
+    # planos son sólo la palabra "ENAP" en texto; se usan como último recurso).
     logos = [
-        _find_logo(
-            'Logo_ENAP_emblem.png',
-            'Logo_ENAP_header.png',
-            'Logo_ENAP.png',
-            'Logo ENAP.png',
+        (
+            _find_logo(
+                'Logo_ENAP_emblem.png',
+                'Logo_ENAP_header.png',
+                'Logo_ENAP.png',
+                'Logo ENAP.png',
+            ),
+            Cm(1.1),
         ),
-        _find_logo('CotecmarLogo_header.png', 'CotecmarLogo.png'),
-        _find_logo('Logo_CUC_header.png', 'Logo_CUC.png', 'Logo CUC.png'),
+        (_find_logo('CotecmarLogo_header.png', 'CotecmarLogo.png'), Cm(0.9)),
+        (_find_logo('Logo_CUC_header.png', 'Logo_CUC.png', 'Logo CUC.png'), Cm(0.85)),
     ]
-    logos = [p for p in logos if p]
+    logos = [(p, h) for p, h in logos if p]
     if logos:
         table = header.add_table(rows=1, cols=len(logos), width=Cm(17))
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -320,20 +629,38 @@ def _add_header_logos(
         if tbl.tblPr is None:
             tbl.insert(0, tbl_pr)
 
-        for cell, logo in zip(table.rows[0].cells, logos):
+        for cell, (logo, logo_h) in zip(table.rows[0].cells, logos):
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
             cell.text = ''
             p = cell.paragraphs[0]
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0)
             run = p.add_run()
             try:
-                run.add_picture(str(logo), height=Cm(1.15))
+                run.add_picture(_logo_stream_for_header(logo), height=logo_h)
             except Exception:
                 continue
 
-    subtitle = header.add_paragraph()
-    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = subtitle.add_run(subtitle_text)
-    _set_run_font(run, size_pt=DOCUMENT_FONT_SIZE, color=RGBColor(0x55, 0x65, 0x75))
+    _add_header_rule(header)
+
+
+def _add_header_rule(header) -> None:
+    """Línea horizontal navy pegada a los logos (estilo membrete)."""
+    rule = header.add_paragraph()
+    rule.paragraph_format.space_before = Pt(1)
+    # El espacio queda después de la línea, no entre la línea y los logos.
+    rule.paragraph_format.space_after = Pt(8)
+    rule.paragraph_format.line_spacing = Pt(2)
+    p_pr = rule._p.get_or_add_pPr()
+    p_bdr = OxmlElement('w:pBdr')
+    bottom = OxmlElement('w:bottom')
+    bottom.set(qn('w:val'), 'single')
+    bottom.set(qn('w:sz'), '8')
+    bottom.set(qn('w:space'), '1')
+    bottom.set(qn('w:color'), '0F2C59')
+    p_bdr.append(bottom)
+    p_pr.append(p_bdr)
 
 
 def _omoes_costo(proyecto: Proyecto) -> list[Omoe]:
@@ -428,9 +755,8 @@ def build_informe_costos_payload(proyecto: Proyecto) -> dict[str, Any]:
     esc_nombres = [d.get('escenario') for d in dims_meta if d.get('escenario')]
     esc_ref = esc_nombres[0] if len(set(esc_nombres)) == 1 and esc_nombres else 'activo'
     nota = (
-        f'Por ahora el informe de costos usa el escenario «{esc_ref}» '
-        'y suma valores brutos sin pesos entre escenarios (ecuación meso no aplica '
-        'con un único panorama).'
+        f'Consolidación de costos con el escenario «{esc_ref}» '
+        'y valores brutos por ítem de costo.'
     )
     if used_any_fallback:
         nota += (
@@ -511,12 +837,9 @@ def build_informe_costos_docx(proyecto: Proyecto) -> bytes:
     _set_run_font(run, bold=True)
 
     bullets = [
-        'Escenario activo: Estandar (único panorama por ahora; no se combinan escenarios).',
-        'Valor en nodos terminales: valor bruto (sin transformación u(x)), típico de costos.',
-        'Agregación dentro del árbol: suma de valores (sin exigir pesos de escenario).',
-        'Referencia metodológica meso: con un solo contexto no aplica Eq. (21)–(23); '
-        'al agregar panoramas, Eq. (22) selecciona según sentido '
-        '(mínimo-mejor / máximo-mejor), Eq. (23) el peor caso y Eq. (21) la compensación ponderada.',
+        'Escenario activo: Estandar.',
+        'Valor en nodos terminales: valor bruto (sin transformación u(x)).',
+        'Agregación dentro del árbol: suma de valores por dimensión.',
     ]
     for text in bullets:
         p = doc.add_paragraph(style='List Bullet')
@@ -576,19 +899,6 @@ def build_informe_costos_docx(proyecto: Proyecto) -> bytes:
                     )
                 _finalize_report_table(table)
                 doc.add_paragraph()
-
-    doc.add_paragraph()
-    h5 = doc.add_paragraph()
-    run = h5.add_run('5. Observación para Felipe / equipo de costos')
-    _set_run_font(run, bold=True)
-    p = doc.add_paragraph()
-    run = p.add_run(
-        'Este informe permite alimentar y sumar costos sin configurar pesos entre escenarios. '
-        'Cuando existan varios panoramas de costo, se activará la resolución meso '
-        '(Eq. 21 compensatoria / Eq. 22 selección del mejor contexto con sentido '
-        'positivo o negativo / Eq. 23 peor caso).'
-    )
-    _set_run_font(run)
 
     footer = doc.sections[0].footer
     fp = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
@@ -684,7 +994,7 @@ def _nodos_dimension(omoe: Omoe) -> list[NodoArbol]:
     return list(
         NodoArbol.objects.filter(omoe=omoe)
         .select_related('tipo_nivel', 'parent')
-        .order_by('tipo_nivel__orden', 'parent_id', 'orden_visual', 'nombre', 'id')
+        .order_by('tipo_nivel__orden', 'parent_id', 'orden_visual', 'id')
     )
 
 
@@ -819,10 +1129,15 @@ def _terminal_funcion_text(
     terminal: NodoArbol,
     config_map: dict[int, Any] | None = None,
 ) -> str:
-    cfg = (config_map or {}).get(terminal.id)
-    familia = getattr(cfg, 'familia_funciones', None) or terminal.familia_funciones or ''
+    familia = (
+        terminal.familia_funciones
+        or _cfg_value(config_map, terminal, 'familia_funciones')
+        or ''
+    )
     params = _constantes_display(
-        getattr(cfg, 'parametros_funcion', None) or terminal.parametros_funcion,
+        terminal.parametros_funcion
+        or _cfg_value(config_map, terminal, 'parametros_funcion')
+        or {},
     )
     parts = [p for p in (familia, params) if p]
     return ' · '.join(parts) if parts else '—'
@@ -861,21 +1176,66 @@ def _peso_rows_for_escenario(
     nodos: list[NodoArbol],
     config_map: dict[int, Any] | None = None,
 ) -> list[list[str]]:
+    from .nodo_escenario_service import nodo_effective_aplica, nodo_effective_peso
+
+    active_nodes = [
+        nodo for nodo in nodos
+        if nodo_effective_aplica(nodo, config_map)
+    ]
+    active_ids = {nodo.id for nodo in active_nodes}
+    by_id = {nodo.id: nodo for nodo in active_nodes}
+    children_by_parent: dict[int | None, list[NodoArbol]] = {}
+    for nodo in active_nodes:
+        children_by_parent.setdefault(nodo.parent_id, []).append(nodo)
+
+    siblings_by_parent: dict[int | None, list[NodoArbol]] = {}
+    for nodo in active_nodes:
+        siblings_by_parent.setdefault(nodo.parent_id, []).append(nodo)
+
+    def normalized_sibling_fraction(nodo: NodoArbol) -> float:
+        siblings = siblings_by_parent.get(nodo.parent_id, [])
+        weights = [nodo_effective_peso(sibling, config_map) for sibling in siblings]
+        total = sum(weights)
+        local = nodo_effective_peso(nodo, config_map)
+        if total <= 0:
+            return 1.0 / len(siblings) if siblings else 0.0
+        return local / total
+
+    accumulated_cache: dict[int, float] = {}
+
+    def accumulated_weight(nodo: NodoArbol) -> float:
+        if nodo.id in accumulated_cache:
+            return accumulated_cache[nodo.id]
+        norm_fraction = normalized_sibling_fraction(nodo)
+        if nodo.parent_id in active_ids:
+            value = accumulated_weight(by_id[nodo.parent_id]) * norm_fraction
+        else:
+            value = norm_fraction
+        accumulated_cache[nodo.id] = value
+        return value
+
     rows = []
-    for path in _concept_paths(nodos):
-        grupo, mob, terminal = _split_path_columns(path)
-        if terminal is None:
-            continue
-        cfg = (config_map or {}).get(terminal.id)
-        peso = getattr(cfg, 'peso', terminal.peso) if cfg else terminal.peso
+    for nodo in active_nodes:
+        parent = by_id.get(nodo.parent_id)
+        is_terminal = not children_by_parent.get(nodo.id)
+        detail_parts = [
+            str(text).strip()
+            for text in (nodo.descripcion, nodo.justificacion_peso)
+            if str(text or '').strip()
+        ]
+        if is_terminal:
+            funcion = _terminal_funcion_text(nodo, config_map)
+            if funcion and funcion != '—':
+                detail_parts.append(f'Función de utilidad: {funcion}')
         rows.append([
             escenario_nombre,
             dim_nombre,
-            grupo,
-            mob,
-            terminal.nombre or '—',
-            _fmt_percent(peso),
-            _terminal_funcion_text(terminal, config_map),
+            _node_level_label(nodo),
+            nodo.nombre or '—',
+            parent.nombre if parent else 'Raíz de la dimensión',
+            _fmt_percent(nodo_effective_peso(nodo, config_map)),
+            _fmt_percent(accumulated_weight(nodo) * 100.0),
+            '\n'.join(detail_parts) or '—',
         ])
     return rows
 
@@ -1132,7 +1492,7 @@ def _render_concept_map_png(
     draw.line(
         [(margin * scale, (content_top - 10) * scale),
          ((width - margin) * scale, (content_top - 10) * scale)],
-        fill='#dbe2ea',
+        fill='#dce8f4',
         width=1 * scale,
     )
     for level in range(0, max_level + 1):
@@ -1144,13 +1504,13 @@ def _render_concept_map_png(
             draw.text(
                 ((cx - lw / 2) * scale, y * scale),
                 line,
-                fill='#687386',
+                fill='#6b8caf',
                 font=font_level,
             )
             y += level_line_h
 
     # Conectores tipo peine, ahora en horizontal (izquierda → derecha).
-    connector = '#94a3b8'
+    connector = '#a8c4dc'
 
     def draw_links(parent_right: float, parent_cy: float, children: list[NodoArbol]) -> None:
         if not children:
@@ -1190,13 +1550,13 @@ def _render_concept_map_png(
         cx, cy = positions[nodo.id]
         draw_links(cx + node_w[nodo.id] / 2, cy, by_parent.get(nodo.id, []))
 
-    # Raíz de dimensión.
+    # Raíz de dimensión (azul pastel medio).
     draw.rounded_rectangle(
         [root_x * scale, root_y * scale, (root_x + root_w) * scale, (root_y + root_h) * scale],
         radius=10 * scale,
-        fill='#24466e',
-        outline='#112e50',
-        width=3 * scale,
+        fill='#6b9fd4',
+        outline='#4f87bc',
+        width=2 * scale,
     )
     ry = root_y + 12
     for line in root_lines:
@@ -1213,23 +1573,25 @@ def _render_concept_map_png(
     draw.text(
         ((root_cx - sub_w / 2) * scale, ry * scale),
         sub,
-        fill='#dbeafe',
+        fill='#e8f2fc',
         font=font_root_sub,
     )
 
+    # Nodos por nivel: azules pastel (más claro hacia las hojas).
     palette = [
-        ('#1d4ed8', '#1e40af', '#ffffff'),
-        ('#3b82f6', '#2563eb', '#ffffff'),
-        ('#60a5fa', '#3b82f6', '#0f172a'),
-        ('#93c5fd', '#60a5fa', '#0f172a'),
-        ('#bfdbfe', '#93c5fd', '#0f172a'),
+        ('#6b9fd4', '#4f87bc', '#ffffff'),
+        ('#8eb8e3', '#6b9fd4', '#1e3a5f'),
+        ('#b3d0ef', '#8eb8e3', '#1e3a5f'),
+        ('#d4e6f7', '#b3d0ef', '#334155'),
+        ('#eaf3fb', '#c8dff2', '#475569'),
     ]
+    weight_palette = ('#7eb3e0', '#5a96c8', '#1e3a5f')
     for nodo in nodes:
         cx, cy = positions[nodo.id]
         level = level_index.get(_node_level_orden(nodo), 1)
         fill, outline, text_color = palette[min(level - 1, len(palette) - 1)]
         if include_weights:
-            fill, outline, text_color = '#f59e0b', '#d97706', '#111827'
+            fill, outline, text_color = weight_palette
         w = node_w[nodo.id]
         h = node_h[nodo.id]
         x0, y0 = cx - w / 2, cy - h / 2
@@ -1238,7 +1600,7 @@ def _render_concept_map_png(
             radius=9 * scale,
             fill=fill,
             outline=outline,
-            width=3 * scale,
+            width=2 * scale,
         )
         lines = node_lines[nodo.id]
         text_block_h = len(lines) * node_line_h
@@ -1353,7 +1715,7 @@ def _add_etapa1_arboles_section(
     doc: Document,
     schema: dict[str, Any],
     *,
-    include_weights: bool = False,
+    progress_callback: Callable[[int, str], None] | None = None,
 ) -> None:
     """1.1 Árboles dimensionales renderizados como el mapa conceptual."""
     _add_heading(doc, 'Etapa 1. Definición y estructuración del proyecto', level=1)
@@ -1367,37 +1729,67 @@ def _add_etapa1_arboles_section(
 
     from .nodo_escenario_service import load_config_map
 
-    for dim in schema.get('dimensiones') or []:
+    dimensiones = schema.get('dimensiones') or []
+    dimension_ids = [dim['omoe_id'] for dim in dimensiones]
+    escenarios_por_dimension: dict[int, list[Escenario]] = {
+        dimension_id: [] for dimension_id in dimension_ids
+    }
+    for escenario in Escenario.objects.filter(
+        omoe_id__in=dimension_ids,
+    ).order_by('orden', 'nombre', 'id'):
+        escenarios_por_dimension.setdefault(escenario.omoe_id, []).append(escenario)
+    total_mapas = max(
+        sum(
+            1 + sum(
+                not _is_estandar_escenario(esc.nombre)
+                for esc in escenarios_por_dimension.get(dim['omoe_id'], [])
+            )
+            for dim in dimensiones
+        ),
+        1,
+    )
+    mapas_generados = 0
+
+    def map_progress() -> None:
+        if progress_callback:
+            progress_callback(
+                20 + round(35 * mapas_generados / total_mapas),
+                f'Generando mapas dimensionales ({mapas_generados}/{total_mapas})',
+            )
+
+    for dim in dimensiones:
         omoe = Omoe.objects.get(pk=dim['omoe_id'])
         nodos = _nodos_dimension(omoe)
         dim_label = f"{dim['omoe_nombre']} ({(dim.get('rama_evaluacion') or '').upper() or 'TIPO'})"
-        weight_label = 'con pesos' if include_weights else 'sin pesos'
 
         _add_concept_map_block(
             doc,
-            [dim_label, f'Árbol estándar / completo ({weight_label})'],
+            [dim_label, 'Árbol estándar / completo (sin pesos)'],
             omoe,
             nodos,
-            include_weights=include_weights,
+            include_weights=False,
         )
+        mapas_generados += 1
+        map_progress()
 
-        escenarios = list(Escenario.objects.filter(omoe=omoe).order_by('orden', 'nombre', 'id'))
+        escenarios = escenarios_por_dimension.get(omoe.id, [])
         for esc in escenarios:
             if _is_estandar_escenario(esc.nombre):
                 continue
             config = load_config_map(esc.id)
             _add_concept_map_block(
                 doc,
-                [f'Escenario: {esc.nombre} ({weight_label})'],
+                [f'Escenario: {esc.nombre} (con pesos)'],
                 omoe,
                 nodos,
                 config_map=config,
-                include_weights=include_weights,
+                include_weights=True,
             )
+            mapas_generados += 1
+            map_progress()
 
 
 def _add_alternativas_section(doc: Document, proyecto: Proyecto) -> None:
-    _add_heading(doc, '1.2. Definición de las alternativas', level=2)
     alternativas = list(
         Alternativa.objects.filter(proyecto=proyecto)
         .prefetch_related('capacidades', 'caracteristicas__plantilla')
@@ -1419,11 +1811,26 @@ def _add_alternativas_section(doc: Document, proyecto: Proyecto) -> None:
             '; '.join(caps),
             '; '.join(caracts),
         ])
+    headers = [
+        'Alternativa',
+        'Descripción',
+        'Referencia',
+        'Costo declarado',
+        'Capacidades',
+        'Características',
+    ]
+    # Título de sección + caption + tabla viajan juntos (sin página huérfana).
+    _begin_table_block(
+        doc,
+        _estimate_table_height_cm(headers, rows, extra_heading_count=1),
+    )
+    _add_heading(doc, '1.2. Definición de las alternativas', level=2, keep_with_next=True)
     _add_table(
         doc,
-        ['Alternativa', 'Descripción', 'Referencia', 'Costo declarado', 'Capacidades', 'Características'],
+        headers,
         rows,
         title='Definición de las alternativas',
+        new_page=False,
     )
 
     for alt in alternativas:
@@ -1433,6 +1840,7 @@ def _add_alternativas_section(doc: Document, proyecto: Proyecto) -> None:
         if not foto_path or not foto_path.is_file():
             continue
         sub = doc.add_paragraph()
+        sub.paragraph_format.keep_with_next = True
         run = sub.add_run(f'Imagen — {alt.nombre}')
         _set_run_font(run, bold=True)
         pic = doc.add_paragraph()
@@ -1447,7 +1855,6 @@ def _add_alternativas_section(doc: Document, proyecto: Proyecto) -> None:
 
 def _add_etapa1_estructura_jerarquica(doc: Document, schema: dict[str, Any]) -> None:
     """1.3 Tabla de definición de la estructura jerárquica."""
-    _add_heading(doc, '1.3. Tabla de definición de la estructura jerárquica', level=2)
     from .nodo_escenario_service import load_config_map
 
     headers = [
@@ -1458,6 +1865,7 @@ def _add_etapa1_estructura_jerarquica(doc: Document, schema: dict[str, Any]) -> 
         'Nodo terminal — DT',
         'Descripción o función',
     ]
+    section_title_pending = '1.3. Tabla de definición de la estructura jerárquica'
     for dim in schema.get('dimensiones') or []:
         omoe = Omoe.objects.get(pk=dim['omoe_id'])
         nodos = _nodos_dimension(omoe)
@@ -1465,10 +1873,14 @@ def _add_etapa1_estructura_jerarquica(doc: Document, schema: dict[str, Any]) -> 
         escenarios = list(Escenario.objects.filter(omoe=omoe).order_by('orden', 'nombre', 'id'))
         if not escenarios:
             rows = _hierarchy_rows_for_escenario('—', dim_nombre, nodos)
+            extra = 2 if section_title_pending else 1
             _begin_table_block(
                 doc,
-                _estimate_table_height_cm(headers, rows, extra_heading_count=1),
+                _estimate_table_height_cm(headers, rows, extra_heading_count=extra),
             )
+            if section_title_pending:
+                _add_heading(doc, section_title_pending, level=2, keep_with_next=True)
+                section_title_pending = None
             _add_heading(doc, dim_nombre, level=3, keep_with_next=True)
             _add_table_with_merges(
                 doc,
@@ -1483,10 +1895,14 @@ def _add_etapa1_estructura_jerarquica(doc: Document, schema: dict[str, Any]) -> 
         for esc in escenarios:
             config = load_config_map(esc.id)
             rows = _hierarchy_rows_for_escenario(esc.nombre, dim_nombre, nodos, config)
+            extra = 2 if section_title_pending else 1
             _begin_table_block(
                 doc,
-                _estimate_table_height_cm(headers, rows, extra_heading_count=1),
+                _estimate_table_height_cm(headers, rows, extra_heading_count=extra),
             )
+            if section_title_pending:
+                _add_heading(doc, section_title_pending, level=2, keep_with_next=True)
+                section_title_pending = None
             _add_heading(
                 doc,
                 f'{dim_nombre} · Escenario: {esc.nombre}',
@@ -1501,22 +1917,38 @@ def _add_etapa1_estructura_jerarquica(doc: Document, schema: dict[str, Any]) -> 
                 title=f'Estructura jerárquica — {dim_nombre} — {esc.nombre}',
                 new_page=False,
             )
+    if section_title_pending:
+        _add_heading(doc, section_title_pending, level=2)
+        note = doc.add_paragraph()
+        run = note.add_run('No hay dimensiones configuradas para mostrar la estructura.')
+        _set_run_font(run, color=RGBColor(0x47, 0x55, 0x69))
 
 
 def _add_etapa1_pesos_nodo(doc: Document, schema: dict[str, Any]) -> None:
     """1.4 Tabla de pesos por nodo."""
-    _add_heading(doc, '1.4. Tabla de pesos por nodo', level=2)
     from .nodo_escenario_service import load_config_map
+
+    def add_weight_explanation() -> None:
+        explanation = doc.add_paragraph()
+        explanation.paragraph_format.keep_with_next = True
+        _set_run_font(explanation.add_run(
+            'El peso local es el valor configurado para el nodo dentro de su grupo de '
+            'hermanos. El peso acumulado normaliza esos valores en cada nivel '
+            '(peso local / Σ hermanos activos) y los multiplica a lo largo de la ruta '
+            'desde la raíz, igual que en el motor de simulación.'
+        ))
 
     headers = [
         'Escenario',
         'Dimensión',
-        'Grupo de afinidad',
-        'Nodo intermedio',
-        'Nodo terminal',
-        'Peso',
-        'Función de utilidad',
+        'Nivel',
+        'Nodo',
+        'Nodo padre',
+        'Peso local',
+        'Peso acumulado',
+        'Descripción / función',
     ]
+    section_title_pending = '1.4. Tabla de pesos por nodo'
     for dim in schema.get('dimensiones') or []:
         omoe = Omoe.objects.get(pk=dim['omoe_id'])
         nodos = _nodos_dimension(omoe)
@@ -1524,16 +1956,21 @@ def _add_etapa1_pesos_nodo(doc: Document, schema: dict[str, Any]) -> None:
         escenarios = list(Escenario.objects.filter(omoe=omoe).order_by('orden', 'nombre', 'id'))
         if not escenarios:
             rows = _peso_rows_for_escenario('—', dim_nombre, nodos)
+            extra = 3 if section_title_pending else 1
             _begin_table_block(
                 doc,
-                _estimate_table_height_cm(headers, rows, extra_heading_count=1),
+                _estimate_table_height_cm(headers, rows, extra_heading_count=extra),
             )
+            if section_title_pending:
+                _add_heading(doc, section_title_pending, level=2, keep_with_next=True)
+                add_weight_explanation()
+                section_title_pending = None
             _add_heading(doc, dim_nombre, level=3, keep_with_next=True)
             _add_table_with_merges(
                 doc,
                 headers,
                 rows,
-                merge_cols=(0, 1, 2, 3),
+                merge_cols=(0, 1),
                 title=f'Pesos por nodo — {dim_nombre}',
                 new_page=False,
             )
@@ -1542,10 +1979,15 @@ def _add_etapa1_pesos_nodo(doc: Document, schema: dict[str, Any]) -> None:
         for esc in escenarios:
             config = load_config_map(esc.id)
             rows = _peso_rows_for_escenario(esc.nombre, dim_nombre, nodos, config)
+            extra = 3 if section_title_pending else 1
             _begin_table_block(
                 doc,
-                _estimate_table_height_cm(headers, rows, extra_heading_count=1),
+                _estimate_table_height_cm(headers, rows, extra_heading_count=extra),
             )
+            if section_title_pending:
+                _add_heading(doc, section_title_pending, level=2, keep_with_next=True)
+                add_weight_explanation()
+                section_title_pending = None
             _add_heading(
                 doc,
                 f'{dim_nombre} · Escenario: {esc.nombre}',
@@ -1556,29 +1998,1049 @@ def _add_etapa1_pesos_nodo(doc: Document, schema: dict[str, Any]) -> None:
                 doc,
                 headers,
                 rows,
-                merge_cols=(0, 1, 2, 3),
+                merge_cols=(0, 1),
                 title=f'Pesos por nodo — {dim_nombre} — {esc.nombre}',
                 new_page=False,
             )
+    if section_title_pending:
+        _add_heading(doc, section_title_pending, level=2)
+        note = doc.add_paragraph()
+        run = note.add_run('No hay dimensiones configuradas para mostrar los pesos.')
+        _set_run_font(run, color=RGBColor(0x47, 0x55, 0x69))
 
 
-def _add_etapa2_placeholder(doc: Document) -> None:
-    _add_heading(doc, 'Etapa 2. Evaluaciones de las alternativas', level=1)
-    p = doc.add_paragraph()
-    run = p.add_run(
-        'Las matrices de evaluación (alternativas × nodos terminales por dimensión y escenario) '
-        'y la matriz bruta se incorporarán en la siguiente iteración de este mismo documento.'
+def _display_valor_evaluacion(raw: Any, col: dict) -> str:
+    """Texto legible de la celda de evaluación (valor x de entrada)."""
+    if raw is None or str(raw).strip() == '':
+        return '—'
+    text = str(raw).strip()
+    if col.get('input_kind') == 'riesgo' and '|' in text:
+        prob, cons = text.split('|', 1)
+        if prob and cons:
+            return f'P={prob} · C={cons}'
+    if col.get('unidad'):
+        return f'{text} {col["unidad"]}'.strip()
+    return text
+
+
+def _load_alternativas_valores(proyecto: Proyecto) -> list[tuple[Alternativa, dict[str, str]]]:
+    alternativas = list(Alternativa.objects.filter(proyecto=proyecto).order_by('id'))
+    return [(alt, load_valores_map(alt.id)) for alt in alternativas]
+
+
+def _columnas_escenario_dimension(dimension: dict, escenario_id: int) -> list[dict]:
+    return [
+        col for col in (dimension.get('columnas') or [])
+        if col.get('escenario_id') == escenario_id
+    ]
+
+
+def _evaluacion_matrix_headers(
+    alternativas_valores: list[tuple[Alternativa, dict[str, str]]],
+) -> list[str]:
+    return ['Nodo terminal'] + [
+        alt.nombre or f'Alternativa #{alt.id}'
+        for alt, _ in alternativas_valores
+    ]
+
+
+def _evaluacion_matrix_rows(
+    alternativas_valores: list[tuple[Alternativa, dict[str, str]]],
+    columnas: list[dict],
+) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for col in columnas:
+        row = [col.get('terminal_nombre') or col.get('label') or '—']
+        for _, valores in alternativas_valores:
+            row.append(_display_valor_evaluacion(valores.get(col['key'], ''), col))
+        rows.append(row)
+    return rows
+
+
+def _matriz_bruta_column_label(col: dict, dim_nombre: str) -> str:
+    terminal = col.get('terminal_nombre') or col.get('label') or '—'
+    escenario = col.get('escenario_nombre') or ''
+    if escenario:
+        return f'{dim_nombre} — {terminal} ({escenario})'
+    return f'{dim_nombre} — {terminal}'
+
+
+def _scientific_number(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return _fmt(value)
+    if abs(number) >= 1_000_000 or (number != 0 and abs(number) < 0.0001):
+        return f'{number:.6e}'
+    return f'{number:.6f}'.rstrip('0').rstrip('.')
+
+
+def _add_equation(doc: Document, equation: str) -> None:
+    """Ecuación centrada como OMML nativo de Word (LaTeX → editable)."""
+    add_latex_equation(doc, equation, center=True)
+
+
+def _walk_calculation_trace(trace: dict[str, Any] | None):
+    if not isinstance(trace, dict):
+        return
+    yield trace
+    for child in trace.get('hijos') or []:
+        child_trace = child.get('trace') if isinstance(child, dict) else None
+        if isinstance(child_trace, dict):
+            yield from _walk_calculation_trace(child_trace)
+        elif isinstance(child, dict) and child.get('kind'):
+            yield from _walk_calculation_trace(child)
+
+
+def _utility_equation_label(leaf: dict[str, Any]) -> str:
+    family = leaf.get('familia_label') or leaf.get('familia') or 'Utilidad'
+    utility_type = leaf.get('utilidad_tipo') or ''
+    debug = leaf.get('debug') or {}
+    direction = 'creciente' if debug.get('is_increasing', True) else 'decreciente'
+    if family.startswith('Valor bruto'):
+        return 'z(x) = x'
+    if family.startswith('Riesgo'):
+        return 'r(x) = probabilidad × consecuencia'
+    if utility_type == 'LinearUtilityFunction':
+        base = 'n(x) = clip((x−L)/(U−L), 0, 1)'
+        return f'{base}; u(x) = {"n(x)" if direction == "creciente" else "1−n(x)"}'
+    if utility_type == 'ExponentialUtilityFunction':
+        return 'u(x) = (exp(k·n(x))−1)/(exp(k)−1)'
+    if utility_type == 'LogarithmicUtilityFunction':
+        return 'u(x) = ln(1+k·n(x))/ln(1+k)'
+    if utility_type == 'SigmoidalUtilityFunction':
+        return 'u(x) = 1/(1+exp(−k·(n(x)−m)))'
+    if utility_type == 'DiscreteUtilityFunction':
+        return 'u(x) = valor de la escala discreta configurada'
+    return f'u(x) — {family}'
+
+
+def _leaf_value_substitution(
+    leaf: dict[str, Any],
+    scenario: dict[str, Any],
+) -> str:
+    x = scenario.get('x')
+    result = _scientific_number(scenario.get('u'))
+    family = leaf.get('familia_label') or ''
+    if family.startswith('Valor bruto'):
+        return f'z({_fmt(x)}) = {_fmt(x)}'
+    if family.startswith('Riesgo'):
+        parts = str(x or '').split('|', 1)
+        if len(parts) == 2:
+            return f'r = {_fmt(parts[0])} × {_fmt(parts[1])} = {result}'
+        return f'r({_fmt(x)}) = {result}'
+    debug = leaf.get('debug') or {}
+    utility_type = leaf.get('utilidad_tipo') or ''
+    if utility_type == 'LinearUtilityFunction':
+        try:
+            x_num = float(x)
+            lower = float(debug.get('L'))
+            upper = float(debug.get('U'))
+            normalized = (
+                max(0.0, min(1.0, (x_num - lower) / (upper - lower)))
+                if upper != lower else 0.0
+            )
+            base = normalized if debug.get('is_increasing', True) else 1.0 - normalized
+            return (
+                f'n=clip(({_scientific_number(x_num)}−{_scientific_number(lower)})/'
+                f'({_scientific_number(upper)}−{_scientific_number(lower)}))'
+                f'={_scientific_number(normalized)}; '
+                f'u={_scientific_number(base)}'
+            )
+        except (TypeError, ValueError):
+            pass
+    return (
+        f'{_utility_equation_label(leaf)}; '
+        f'x={_fmt(x)} ⇒ resultado={result}'
     )
-    _set_run_font(run, color=RGBColor(0x47, 0x55, 0x69))
+
+
+def _rollup_substitution(trace: dict[str, Any]) -> str:
+    children = trace.get('hijos') or []
+    if not children:
+        return '—'
+    def child_value(child: dict[str, Any]):
+        return child.get('valor') if child.get('valor') is not None else child.get('utilidad')
+
+    values = [_scientific_number(child_value(child)) for child in children]
+    if str(trace.get('formula') or '').startswith('Σ(x'):
+        return ' + '.join(values) + f' = {_scientific_number(trace.get("valor"))}'
+    numerator = ' + '.join(
+        f'({_scientific_number(child_value(child))}'
+        f' × {_scientific_number(child.get("peso"))})'
+        for child in children
+    )
+    denominator = _scientific_number(
+        trace.get('suma_pesos')
+        if trace.get('suma_pesos') is not None
+        else sum(float(child.get('peso') or 0) for child in children)
+    )
+    return (
+        f'[{numerator}] / {denominator}'
+        f' = {_scientific_number(trace.get("valor"))}'
+    )
+
+
+def _pick_worked_example(
+    resultados: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Prefiere una dimensión en modo utilidad con traza y varios terminales."""
+    candidates: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+    for alt in resultados:
+        for dim in alt.get('dimensiones') or []:
+            trace = ((dim.get('detalle') or {}).get('trace')) or {}
+            if not trace:
+                continue
+            leaves = [
+                node for node in _walk_calculation_trace(trace)
+                if node.get('kind') == 'leaf'
+            ]
+            modo = str(trace.get('modo_valor_terminal') or '')
+            score = len(leaves) * 10 + (5 if modo == 'utilidad' else 0)
+            candidates.append((score, alt, dim))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    _, alt, dim = candidates[0]
+    return alt, dim
+
+
+def _add_body_paragraph(
+    doc: Document,
+    text: str,
+    *,
+    indent: bool = True,
+    keep_with_next: bool = False,
+) -> None:
+    paragraph = doc.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(6)
+    paragraph.paragraph_format.space_before = Pt(0)
+    if indent:
+        paragraph.paragraph_format.first_line_indent = Cm(0.5)
+    if keep_with_next:
+        paragraph.paragraph_format.keep_with_next = True
+    _set_run_font(paragraph.add_run(text))
+
+
+def _add_step_heading(doc: Document, text: str) -> None:
+    heading = doc.add_paragraph()
+    heading.paragraph_format.space_before = Pt(10)
+    heading.paragraph_format.space_after = Pt(4)
+    heading.paragraph_format.keep_with_next = True
+    run = heading.add_run(text)
+    _set_run_font(run, bold=True, color=RGBColor(0x0F, 0x2C, 0x59))
+
+
+def _add_substep_heading(doc: Document, text: str) -> None:
+    heading = doc.add_paragraph()
+    heading.paragraph_format.space_before = Pt(8)
+    heading.paragraph_format.space_after = Pt(2)
+    heading.paragraph_format.keep_with_next = True
+    run = heading.add_run(text)
+    _set_run_font(run, bold=True)
+
+
+def _add_numbered_equation(doc: Document, equation: str, number: int) -> None:
+    """Ecuación numerada OMML nativa (LaTeX → editable en Word)."""
+    add_latex_equation(doc, equation, number=number, center=True)
+
+
+def _leaf_is_quantitative(leaf: dict[str, Any]) -> bool:
+    utility_type = leaf.get('utilidad_tipo') or ''
+    debug = leaf.get('debug') or {}
+    if utility_type == 'DiscreteUtilityFunction':
+        return False
+    if utility_type == 'LinearUtilityFunction' and debug.get('L') is not None and debug.get('U') is not None:
+        return True
+    family = str(leaf.get('familia_label') or '')
+    if family.startswith('Riesgo') or family.startswith('Valor bruto'):
+        return False
+    return utility_type in {
+        'LinearUtilityFunction',
+        'ExponentialUtilityFunction',
+        'LogarithmicUtilityFunction',
+        'SigmoidalUtilityFunction',
+    }
+
+
+def _leaf_interval_text(leaf: dict[str, Any]) -> str:
+    debug = leaf.get('debug') or {}
+    if debug.get('L') is not None and debug.get('U') is not None:
+        return f'[{_scientific_number(debug["L"])}, {_scientific_number(debug["U"])}]'
+    return '—'
+
+
+def _scenario_xu_text(leaf: dict[str, Any], scenario: dict[str, Any]) -> str:
+    x = scenario.get('x')
+    u = _scientific_number(scenario.get('u'))
+    if x is None or str(x).strip() == '':
+        return f'— → {u}'
+    text = str(x).strip()
+    if (leaf.get('familia_label') or '').startswith('Riesgo') and '|' in text:
+        prob, cons = text.split('|', 1)
+        return f'P={prob}·C={cons} → {u}'
+    try:
+        float(text)
+        return f'{_scientific_number(text)} → {u}'
+    except (TypeError, ValueError):
+        return f'{text} → {u}'
+
+
+def _scenario_names_ordered(leaves: list[dict[str, Any]]) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for leaf in leaves:
+        for scenario in leaf.get('escenarios') or []:
+            name = scenario.get('nombre') or '—'
+            if name not in seen:
+                seen.add(name)
+                names.append(name)
+    return names
+
+
+def _collect_rollup_nodes(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    """Nodos compuestos en orden bottom-up (raíz al final) para el relato."""
+    ranked: list[tuple[int, dict[str, Any]]] = []
+
+    def visit(node: dict[str, Any], depth: int) -> None:
+        if not isinstance(node, dict):
+            return
+        for child in node.get('hijos') or []:
+            child_trace = child.get('trace') if isinstance(child, dict) else None
+            if isinstance(child_trace, dict):
+                visit(child_trace, depth + 1)
+            elif isinstance(child, dict) and child.get('kind'):
+                visit(child, depth + 1)
+        if node.get('kind') in ('rollup', 'dimension') and node.get('hijos'):
+            ranked.append((depth, node))
+
+    visit(trace, 0)
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return [node for _, node in ranked]
+
+
+def _rollup_children_names(node: dict[str, Any]) -> str:
+    names = [child.get('nombre') or '—' for child in (node.get('hijos') or [])]
+    if not names:
+        return '—'
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f'{names[0]} y {names[1]}'
+    return ', '.join(names[:-1]) + f' y {names[-1]}'
+
+
+def _rollup_weights_text(node: dict[str, Any]) -> str:
+    weights = [
+        f'{_scientific_number(child.get("peso"))} %'
+        for child in (node.get('hijos') or [])
+    ]
+    return ', '.join(weights) if weights else '—'
+
+
+def _worked_linear_example(
+    leaf: dict[str, Any],
+    scenario: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    debug = leaf.get('debug') or {}
+    if leaf.get('utilidad_tipo') != 'LinearUtilityFunction':
+        return None
+    if debug.get('L') is None or debug.get('U') is None:
+        return None
+    try:
+        x_num = float(scenario.get('x'))
+        lower = float(debug['L'])
+        upper = float(debug['U'])
+    except (TypeError, ValueError):
+        return None
+    normalized = (
+        max(0.0, min(1.0, (x_num - lower) / (upper - lower)))
+        if upper != lower else 0.0
+    )
+    result = normalized if debug.get('is_increasing', True) else 1.0 - normalized
+    leaf_name = leaf.get('nombre') or 'j'
+    esc_name = scenario.get('nombre') or 'm'
+    eq_n = (
+        f'n_{{{tex_text(leaf_name)},{tex_text(esc_name)}}} = '
+        f'\\mathrm{{clip}}\\left('
+        f'\\dfrac{{{_scientific_number(x_num)}-{_scientific_number(lower)}}}'
+        f'{{{_scientific_number(upper)}-{_scientific_number(lower)}}}'
+        f',\\,0,\\,1\\right) = {_scientific_number(normalized)}'
+    )
+    eq_u = (
+        f'u_{{{tex_text(leaf_name)},{tex_text(esc_name)}}} = '
+        f'{_scientific_number(result)}'
+    )
+    return leaf_name, eq_n, eq_u
+
+
+def _worked_discrete_example(
+    leaf: dict[str, Any],
+    scenario: dict[str, Any],
+) -> tuple[str, str] | None:
+    if leaf.get('utilidad_tipo') != 'DiscreteUtilityFunction' and _leaf_is_quantitative(leaf):
+        return None
+    x = scenario.get('x')
+    if x is None or str(x).strip() == '':
+        return None
+    try:
+        float(x)
+        return None
+    except (TypeError, ValueError):
+        pass
+    leaf_name = leaf.get('nombre') or 'j'
+    esc_name = scenario.get('nombre') or 'm'
+    eq = (
+        f'x_{{{tex_text(leaf_name)},{tex_text(esc_name)}}} = '
+        f'{tex_text(str(x).strip())}'
+        f'\\ \\Rightarrow\\ '
+        f'u_{{{tex_text(leaf_name)},{tex_text(esc_name)}}} = '
+        f'{_scientific_number(scenario.get("u"))}'
+    )
+    return leaf_name, eq
+
+
+def _add_methodology_table(
+    doc: Document,
+    headers: list[str],
+    rows: list[list[Any]],
+    title: str,
+) -> None:
+    if not rows:
+        return
+    _begin_table_block(
+        doc,
+        _estimate_evaluation_table_height_cm(headers, rows, extra_heading_count=0),
+    )
+    _add_table(doc, headers, rows, title=title, new_page=False)
+
+
+def _add_matriz_bruta_scientific_explanation(
+    doc: Document,
+    resultados: list[dict[str, Any]],
+    *,
+    progress_callback: Callable[[int, str], None] | None = None,
+) -> None:
+    """Explicación estilo artículo científico: formulación + un ejemplo resuelto."""
+    if progress_callback:
+        progress_callback(94, 'Escribiendo metodología de la matriz general')
+
+    n_alts = len(resultados)
+    n_dims = max((len(alt.get('dimensiones') or []) for alt in resultados), default=0)
+    eq = 0
+
+    def next_eq(equation: str) -> None:
+        nonlocal eq
+        eq += 1
+        _add_numbered_equation(doc, equation, eq)
+
+    _add_heading(
+        doc,
+        '2.3. Metodología del cálculo de la matriz general',
+        level=2,
+        keep_with_next=True,
+    )
+    _add_body_paragraph(
+        doc,
+        'La matriz general X es una única matriz de orden '
+        f'{n_alts} × {n_dims} (alternativas × dimensiones). Cada celda xₐd '
+        'representa el valor agregado de la dimensión d para la alternativa a, '
+        'antes de Pareto, normalización o MADM. A continuación se formaliza el '
+        'procedimiento y se resuelve un único ejemplo numérico representativo.',
+    )
+
+    example = _pick_worked_example(resultados)
+    if example is None:
+        _add_heading(doc, '2.3.1. Formulación general', level=3, keep_with_next=True)
+        next_eq(r'u_{jm}=f_j(x_{jm})')
+        next_eq(r'\bar{u}_j=\dfrac{\sum_m (p_m\cdot u_{jm})}{\sum_m p_m}')
+        next_eq(r'U_k=\dfrac{\sum_j (w_{jk}\cdot U_j)}{\sum_j w_{jk}}')
+        next_eq(r'X=[x_{ad}]_{a=1,\ldots,A,\ d=1,\ldots,D}')
+        if progress_callback:
+            progress_callback(97, 'Metodología documentada')
+        return
+
+    alt, dim = example
+    alt_name = alt.get('nombre') or f"Alternativa #{alt.get('id')}"
+    dim_name = dim.get('omoe_nombre') or f"Dimensión #{dim.get('omoe_id')}"
+    detail = dim.get('detalle') or {}
+    trace = detail.get('trace') or {}
+    final_value = _scientific_number(dim.get('valor'))
+    modo = trace.get('modo_valor_terminal') or 'utilidad'
+    agregacion = dim.get('escenario_agregacion') or 'compensatorio'
+    leaves = [
+        node for node in _walk_calculation_trace(trace)
+        if node.get('kind') == 'leaf'
+    ]
+    scenario_names = _scenario_names_ordered(leaves)
+    n_scenarios = len(scenario_names)
+    n_leaves = len(leaves)
+    quant_leaves = [leaf for leaf in leaves if _leaf_is_quantitative(leaf)]
+    discrete_leaves = [leaf for leaf in leaves if not _leaf_is_quantitative(leaf)]
+    modo_label = (
+        'modo utilidad' if modo == 'utilidad'
+        else 'modo valor bruto' if modo == 'valor_bruto'
+        else str(modo)
+    )
+    agregacion_label = (
+        'compensatoria' if agregacion == 'compensatorio'
+        else str(agregacion).replace('_', ' ')
+    )
+
+    _add_heading(
+        doc,
+        f'2.3.2. Ejemplo numérico: cálculo de {dim_name} para la alternativa {alt_name}',
+        level=3,
+        keep_with_next=True,
+    )
+    _add_body_paragraph(
+        doc,
+        'Con el propósito de ilustrar el procedimiento utilizado para construir '
+        'la matriz general de evaluación, se desarrolla el cálculo de la celda '
+        f'correspondiente a la dimensión {dim_name} de la alternativa {alt_name}:',
+    )
+    next_eq(f'x_{{{tex_text(alt_name)},{tex_text(dim_name)}}}')
+
+    _add_body_paragraph(
+        doc,
+        f'Para esta evaluación, los nodos terminales operan en {modo_label}, '
+        f'la agregación entre escenarios es {agregacion_label} y la propagación '
+        'de los resultados dentro del árbol de decisión se realiza mediante un '
+        'modelo jerárquico de valor multiatributo (Multi-Attribute Value Theory, '
+        'MAVT).',
+    )
+    _add_body_paragraph(
+        doc,
+        'El procedimiento comprende tres etapas: transformación de los nodos '
+        'terminales, agregación jerárquica y asignación del resultado en la '
+        'matriz general.',
+    )
+
+    # —— Paso 1 ——
+    _add_step_heading(doc, 'Paso 1. Transformación de los nodos terminales')
+    _add_body_paragraph(
+        doc,
+        f'Para cada criterio terminal (j) y escenario operacional (m), el valor '
+        f'original x_jm se transforma en una utilidad adimensional u_jm, definida '
+        f'en el intervalo [0, 1]. En este ejemplo intervienen {n_leaves} nodos '
+        f'terminales'
+        + (f' y {n_scenarios} escenarios.' if n_scenarios else '.'),
+    )
+
+    if quant_leaves:
+        _add_body_paragraph(
+            doc,
+            'En los criterios cuantitativos se utiliza, cuando corresponde, una '
+            'función de normalización lineal:',
+        )
+        next_eq(
+            r'n_{jm}=\mathrm{clip}\left(\dfrac{x_{jm}-L_j}{U_j-L_j},\,0,\,1\right)'
+        )
+        _add_body_paragraph(
+            doc,
+            'donde L_j y U_j representan, respectivamente, los límites inferior y '
+            'superior definidos para el criterio j. La función clip(·) restringe '
+            'el resultado al intervalo [0, 1]:',
+        )
+        next_eq(r'\mathrm{clip}(z,0,1)=\min\{1,\max\{0,z\}\}')
+        _add_body_paragraph(
+            doc,
+            'Si el criterio es de beneficio (creciente), la utilidad coincide con '
+            'el valor normalizado; si es de costo (decreciente), u_jm = 1 − n_jm:',
+        )
+        next_eq(
+            r'u_{jm}=n_{jm}\ \mathrm{(beneficio)}\quad\mathrm{o}\quad'
+            r'u_{jm}=1-n_{jm}\ \mathrm{(costo)}'
+        )
+
+        worked = None
+        worked_esc = None
+        for leaf in quant_leaves:
+            for scenario in leaf.get('escenarios') or []:
+                candidate = _worked_linear_example(leaf, scenario)
+                if candidate:
+                    worked = candidate
+                    worked_esc = scenario.get('nombre') or 'm'
+                    break
+            if worked:
+                break
+        if worked:
+            leaf_name, eq_n, eq_u = worked
+            _add_body_paragraph(
+                doc,
+                f'Por ejemplo, para el criterio {leaf_name} de la alternativa '
+                f'{alt_name} en el escenario {worked_esc}, se obtiene:',
+            )
+            next_eq(eq_n)
+            _add_body_paragraph(doc, 'Por tanto:')
+            next_eq(eq_u)
+
+    if discrete_leaves:
+        _add_body_paragraph(
+            doc,
+            'En los criterios cualitativos o discretos, la utilidad se obtiene '
+            'directamente de la escala configurada para cada categoría:',
+        )
+        next_eq(r'u_{jm}=s_j(x_{jm})')
+        _add_body_paragraph(
+            doc,
+            'donde s_j(·) relaciona cada categoría cualitativa con su valor de '
+            'utilidad correspondiente.',
+        )
+        disc_example = None
+        for leaf in discrete_leaves:
+            for scenario in leaf.get('escenarios') or []:
+                disc_example = _worked_discrete_example(leaf, scenario)
+                if disc_example:
+                    break
+            if disc_example:
+                break
+        if disc_example:
+            leaf_name, eq_disc = disc_example
+            _add_body_paragraph(
+                doc,
+                f'Por ejemplo, para el criterio {leaf_name}:',
+            )
+            next_eq(eq_disc)
+
+    if n_scenarios > 1 and agregacion == 'compensatorio':
+        _add_body_paragraph(
+            doc,
+            f'Una vez transformados los valores de los {n_scenarios} escenarios, '
+            'la utilidad agregada del criterio terminal j se calcula mediante:',
+        )
+        next_eq(
+            rf'\bar{{u}}_j='
+            rf'\dfrac{{\sum_{{m=1}}^{{{n_scenarios}}} (p_m\cdot u_{{jm}})}}'
+            rf'{{\sum_{{m=1}}^{{{n_scenarios}}} p_m}}'
+        )
+        _add_body_paragraph(
+            doc,
+            'donde p_m corresponde al peso asignado al escenario m. Si los '
+            'escenarios poseen la misma ponderación, la expresión equivale al '
+            'promedio aritmético de las utilidades.',
+        )
+
+    # Compact transformation tables
+    if quant_leaves and scenario_names:
+        headers = ['Criterio', 'Intervalo'] + [
+            f'{name}: x → u' for name in scenario_names
+        ] + ['Utilidad agregada']
+        rows = []
+        for leaf in quant_leaves:
+            by_name = {
+                (scenario.get('nombre') or '—'): scenario
+                for scenario in (leaf.get('escenarios') or [])
+            }
+            row = [leaf.get('nombre') or '—', _leaf_interval_text(leaf)]
+            for name in scenario_names:
+                scenario = by_name.get(name)
+                row.append(_scenario_xu_text(leaf, scenario) if scenario else '—')
+            row.append(_scientific_number(leaf.get('valor')))
+            rows.append(row)
+        _add_methodology_table(
+            doc,
+            headers,
+            rows,
+            title='Transformación de los criterios terminales cuantitativos',
+        )
+
+    if discrete_leaves and scenario_names:
+        headers = ['Criterio'] + [
+            f'{name}: categoría → utilidad' for name in scenario_names
+        ] + ['Utilidad agregada']
+        rows = []
+        for leaf in discrete_leaves:
+            by_name = {
+                (scenario.get('nombre') or '—'): scenario
+                for scenario in (leaf.get('escenarios') or [])
+            }
+            row = [leaf.get('nombre') or '—']
+            for name in scenario_names:
+                scenario = by_name.get(name)
+                row.append(_scenario_xu_text(leaf, scenario) if scenario else '—')
+            row.append(_scientific_number(leaf.get('valor')))
+            rows.append(row)
+        _add_methodology_table(
+            doc,
+            headers,
+            rows,
+            title='Transformación de los criterios terminales discretos',
+        )
+
+    if scenario_names:
+        _add_body_paragraph(
+            doc,
+            'Los escenarios operacionales considerados son:',
+        )
+        for index, name in enumerate(scenario_names, start=1):
+            bullet = doc.add_paragraph(style='List Bullet')
+            bullet.paragraph_format.space_after = Pt(2)
+            _set_run_font(bullet.add_run(f'{name}'))
+
+    if leaves:
+        vector = ',\\,'.join(_scientific_number(leaf.get('valor')) for leaf in leaves)
+        _add_body_paragraph(
+            doc,
+            f'Como resultado de esta primera etapa, se obtiene el vector de '
+            f'utilidades agregadas de los {n_leaves} nodos terminales:',
+        )
+        next_eq(
+            rf'\bar{{u}}_{{{tex_text(alt_name)}}}='
+            rf'\left[{vector}\right]'
+        )
+
+    # —— Paso 2 ——
+    rollup_nodes = _collect_rollup_nodes(trace)
+    _add_step_heading(doc, 'Paso 2. Agregación jerárquica')
+    _add_body_paragraph(
+        doc,
+        f'Las utilidades agregadas de los nodos terminales se propagan desde '
+        f'los niveles inferiores del árbol de valor hasta la raíz de la '
+        f'dimensión {dim_name}. Para cada nodo compuesto k se utiliza una suma '
+        f'ponderada normalizada:',
+    )
+    next_eq(r'U_k=\dfrac{\sum_j (w_{jk}\cdot U_j)}{\sum_j w_{jk}}')
+    _add_body_paragraph(
+        doc,
+        'donde U_j es la utilidad del nodo hijo j, w_jk es su peso local y la '
+        'suma se extiende sobre los hijos activos del nodo compuesto k.',
+    )
+
+    letters = 'abcdefghijklmnopqrstuvwxyz'
+    for index, node in enumerate(rollup_nodes):
+        node_name = node.get('nombre') or f'Nodo {index + 1}'
+        letter = letters[index] if index < len(letters) else str(index + 1)
+        children = node.get('hijos') or []
+        weights_txt = _rollup_weights_text(node)
+        _add_substep_heading(doc, f'{letter}) Nodo {node_name}')
+        _add_body_paragraph(
+            doc,
+            f'El nodo {node_name} integra {_rollup_children_names(node)}, '
+            f'con ponderaciones {weights_txt}:',
+        )
+        # Detailed substitution
+        if children:
+            terms = ' + '.join(
+                f'{_scientific_number(child.get("valor"))}'
+                f'\\cdot {_scientific_number(child.get("peso"))}'
+                for child in children
+            )
+            denom = _scientific_number(
+                node.get('suma_pesos')
+                if node.get('suma_pesos') is not None
+                else sum(float(child.get('peso') or 0) for child in children)
+            )
+            next_eq(
+                f'U_{{{tex_text(node_name)}}}='
+                f'\\dfrac{{{terms}}}{{{denom}}}='
+                f'{_scientific_number(node.get("valor"))}'
+            )
+
+    if rollup_nodes:
+        headers = [
+            'Nodo compuesto',
+            'Nodos integrados',
+            'Ponderaciones',
+            'Utilidad resultante',
+        ]
+        rows = [
+            [
+                node.get('nombre') or '—',
+                _rollup_children_names(node),
+                _rollup_weights_text(node),
+                _scientific_number(node.get('valor')),
+            ]
+            for node in rollup_nodes
+        ]
+        _add_methodology_table(
+            doc,
+            headers,
+            rows,
+            title=f'Agregación jerárquica de la dimensión {dim_name}',
+        )
+
+    # —— Paso 3 ——
+    _add_step_heading(doc, 'Paso 3. Asignación del resultado en la matriz general')
+    _add_body_paragraph(
+        doc,
+        'El valor obtenido en la raíz del árbol se asigna directamente a la '
+        'celda correspondiente de la matriz general X:',
+    )
+    next_eq(
+        f'x_{{{tex_text(alt_name)},{tex_text(dim_name)}}}={final_value}'
+    )
+    _add_body_paragraph(
+        doc,
+        'Este procedimiento se aplica de manera análoga a cada combinación de '
+        'alternativa y dimensión:',
+    )
+    next_eq(r'x_{ad},\quad a=1,\ldots,A,\quad d=1,\ldots,D')
+    _add_body_paragraph(
+        doc,
+        'De esta forma, la repetición del proceso permite construir la matriz '
+        'general:',
+    )
+    next_eq(
+        r'X=\begin{bmatrix}'
+        r'x_{11} & x_{12} & \cdots & x_{1D} \\'
+        r'x_{21} & x_{22} & \cdots & x_{2D} \\'
+        r'\vdots & \vdots & \ddots & \vdots \\'
+        r'x_{A1} & x_{A2} & \cdots & x_{AD}'
+        r'\end{bmatrix}'
+    )
+    _add_body_paragraph(
+        doc,
+        'En la sección siguiente se presenta únicamente la matriz general '
+        'resultante. Los cálculos correspondientes a las demás celdas no se '
+        'reproducen individualmente, debido a que siguen la misma estructura '
+        f'de transformación, agregación de escenarios y propagación jerárquica '
+        f'desarrollada para el par ({alt_name}, {dim_name}).',
+    )
+
+    if progress_callback:
+        progress_callback(97, 'Metodología documentada')
+
+
+def _build_matriz_bruta_calculo(
+    proyecto: Proyecto,
+    progress_callback: Callable[[int, str], None] | None = None,
+    details_out: list[dict[str, Any]] | None = None,
+) -> tuple[list[str], list[list[Any]], str | None]:
+    """
+    Matriz bruta del cálculo (antes de Pareto / normalización / MADM):
+    filas = alternativas, columnas = dimensiones, celdas = valor agregado.
+    """
+    from django.core.exceptions import ValidationError
+
+    from .madm_pipeline import build_matrix_from_rollups
+    from .simulacion_service import _rollup_alternativas_simulacion, validar_simulacion
+
+    if progress_callback:
+        progress_callback(90, 'Validando datos para la matriz general')
+    validacion = validar_simulacion(proyecto)
+    if not validacion.get('ok'):
+        total = validacion.get('total_faltantes') or 0
+        return [], [], (
+            f'No se pudo construir la matriz bruta: faltan {total} valor(es) '
+            f'de evaluación. Complete la matriz de entradas y vuelva a exportar.'
+        )
+
+    try:
+        if progress_callback:
+            progress_callback(91, 'Calculando valores agregados por dimensión')
+        resultados, dimensiones_meta = _rollup_alternativas_simulacion(proyecto)
+        if progress_callback:
+            progress_callback(93, 'Construyendo la matriz general')
+        matrix, alt_names, dim_names, directions = build_matrix_from_rollups(
+            resultados,
+            dimensiones_meta,
+        )
+        if details_out is not None:
+            details_out.extend(resultados)
+    except ValidationError as exc:
+        detail = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+        return [], [], f'No se pudo construir la matriz bruta: {detail}'
+    except Exception as exc:
+        return [], [], f'No se pudo construir la matriz bruta: {exc}'
+
+    headers = ['Alternativa'] + list(dim_names)
+    # Fila de sentido de preferencia (referencia) + filas de valores.
+    pref_row = ['Sentido'] + [
+        ('Maximizar' if str(d).lower() in ('max', 'benefit', 'beneficio') else 'Minimizar')
+        for d in directions
+    ]
+    rows: list[list[Any]] = [pref_row]
+    for i, name in enumerate(alt_names):
+        rows.append([name] + [round(float(v), 6) for v in matrix[i]])
+    if progress_callback:
+        progress_callback(93, 'Matriz general calculada')
+    return headers, rows, None
+
+
+def _reset_report_table_packing(doc: Document) -> None:
+    setattr(doc, '_report_table_page_used_cm', None)
+
+
+def _add_etapa2_evaluaciones(
+    doc: Document,
+    proyecto: Proyecto,
+    schema: dict[str, Any],
+    progress_callback: Callable[[int, str], None] | None = None,
+) -> None:
+    """Etapa 2: evaluaciones (entradas) + matriz bruta del cálculo."""
+    doc.add_page_break()
+    setattr(doc, '_report_table_page_used_cm', 0.0)
+
+    alternativas_valores = _load_alternativas_valores(proyecto)
+    if not alternativas_valores:
+        _add_heading(doc, 'Etapa 2. Matrices de evaluación', level=1)
+        _add_heading(doc, '2.1. Organización de la matriz', level=2)
+        note = doc.add_paragraph()
+        run = note.add_run('No hay alternativas definidas en el proyecto.')
+        _set_run_font(run, color=RGBColor(0xB9, 0x1C, 0x1C))
+        return
+
+    evaluation_tables = [
+        (dim, esc)
+        for dim in (schema.get('dimensiones') or [])
+        for esc in (dim.get('escenarios') or [])
+        if _columnas_escenario_dimension(dim, esc.get('id'))
+    ]
+    total_evaluation_tables = max(len(evaluation_tables), 1)
+    completed_evaluation_tables = 0
+
+    section_21_pending = True
+    section_22_pending = '2.2. Evaluaciones por dimensión y escenario'
+    for dim in schema.get('dimensiones') or []:
+        dim_nombre = dim.get('omoe_nombre') or f'Dimensión #{dim.get("omoe_id")}'
+        escenarios = dim.get('escenarios') or []
+        if not escenarios:
+            continue
+        dim_heading_pending = dim_nombre
+        for esc in escenarios:
+            esc_id = esc.get('id')
+            esc_nombre = esc.get('nombre') or f'Escenario #{esc_id}'
+            columnas = _columnas_escenario_dimension(dim, esc_id)
+            if not columnas:
+                continue
+            headers = _evaluacion_matrix_headers(alternativas_valores)
+            rows = _evaluacion_matrix_rows(alternativas_valores, columnas)
+            # Contar títulos que se escriben ANTES de la tabla (tras el page-break
+            # del empaquetado), para no dejar «Etapa 2» solo en una hoja.
+            extra = 1  # título de escenario
+            if section_21_pending:
+                extra += 3  # Etapa 2 + 2.1 + párrafo
+            if section_22_pending:
+                extra += 1
+            if dim_heading_pending:
+                extra += 1
+            _begin_table_block(
+                doc,
+                _estimate_evaluation_table_height_cm(
+                    headers,
+                    rows,
+                    extra_heading_count=extra,
+                ),
+            )
+            if section_21_pending:
+                _add_heading(
+                    doc,
+                    'Etapa 2. Matrices de evaluación',
+                    level=1,
+                    keep_with_next=True,
+                )
+                _add_heading(
+                    doc,
+                    '2.1. Organización de la matriz',
+                    level=2,
+                    keep_with_next=True,
+                )
+                p = doc.add_paragraph()
+                p.paragraph_format.keep_with_next = True
+                run = p.add_run(
+                    'Las tablas de evaluación se presentan transpuestas respecto al '
+                    'módulo de carga: columnas = alternativas (eje x), filas = nodos '
+                    'terminales (eje y). Los valores son las entradas x registradas '
+                    'por el usuario. La matriz general (2.4) es el resultado agregado '
+                    'del cálculo por dimensión, antes de Pareto, normalización o '
+                    'método multicriterio.'
+                )
+                _set_run_font(run, color=RGBColor(0x47, 0x55, 0x69))
+                section_21_pending = False
+            if section_22_pending:
+                _add_heading(doc, section_22_pending, level=2, keep_with_next=True)
+                section_22_pending = None
+            if dim_heading_pending:
+                _add_heading(doc, dim_heading_pending, level=3, keep_with_next=True)
+                dim_heading_pending = None
+            _add_heading(doc, f'Escenario: {esc_nombre}', level=3, keep_with_next=True)
+            _add_table(
+                doc,
+                headers,
+                rows,
+                title=f'Evaluación — {dim_nombre} — {esc_nombre}',
+                new_page=False,
+            )
+            completed_evaluation_tables += 1
+            if progress_callback:
+                progress_callback(
+                    84 + round(
+                        5 * completed_evaluation_tables / total_evaluation_tables
+                    ),
+                    (
+                        'Agregando tablas de evaluación '
+                        f'({completed_evaluation_tables}/{total_evaluation_tables})'
+                    ),
+                )
+
+    if section_21_pending:
+        _add_heading(doc, 'Etapa 2. Matrices de evaluación', level=1)
+        _add_heading(doc, '2.1. Organización de la matriz', level=2)
+        note = doc.add_paragraph()
+        run = note.add_run('No hay columnas de evaluación activas para mostrar.')
+        _set_run_font(run, color=RGBColor(0x47, 0x55, 0x69))
+    elif section_22_pending:
+        _add_heading(doc, section_22_pending, level=2)
+        note = doc.add_paragraph()
+        run = note.add_run('No hay columnas de evaluación activas para mostrar.')
+        _set_run_font(run, color=RGBColor(0x47, 0x55, 0x69))
+
+    calculation_details: list[dict[str, Any]] = []
+    bruta_headers, bruta_rows, bruta_error = _build_matriz_bruta_calculo(
+        proyecto,
+        progress_callback=progress_callback,
+        details_out=calculation_details,
+    )
+    if bruta_error:
+        _add_heading(doc, '2.4. Matriz general o matriz inicial', level=2)
+        note = doc.add_paragraph()
+        run = note.add_run(bruta_error)
+        _set_run_font(run, color=RGBColor(0xB9, 0x1C, 0x1C))
+        return
+
+    _add_matriz_bruta_scientific_explanation(
+        doc,
+        calculation_details,
+        progress_callback=progress_callback,
+    )
+
+    _begin_table_block(
+        doc,
+        _estimate_table_height_cm(bruta_headers, bruta_rows, extra_heading_count=2),
+    )
+    _add_heading(doc, '2.4. Matriz general o matriz inicial', level=2, keep_with_next=True)
+    intro = doc.add_paragraph()
+    intro.paragraph_format.keep_with_next = True
+    run2 = intro.add_run(
+        'Matriz que arroja el cálculo al inicio: alternativas × dimensiones con el valor '
+        'agregado de cada dimensión, antes de filtro de Pareto, normalización o MADM '
+        '(equivalente a la «matriz de utilidades» / matriz original del cálculo).'
+    )
+    _set_run_font(run2, color=RGBColor(0x47, 0x55, 0x69))
+    _add_table(
+        doc,
+        bruta_headers,
+        bruta_rows,
+        title='Matriz bruta del cálculo (alternativas × dimensiones)',
+        new_page=False,
+    )
 
 
 def build_informe_proyecto_docx(
     proyecto: Proyecto,
     *,
     include_map_weights: bool = False,
+    progress_callback: Callable[[int, str], None] | None = None,
 ) -> bytes:
     """Informe de proyecto: Etapa 1 (estructura) + Etapa 2 (evaluaciones) en un solo documento."""
+    def progress(percent: int, stage: str) -> None:
+        if progress_callback:
+            progress_callback(percent, stage)
+
+    progress(3, 'Consultando estructura y evaluaciones')
     schema = build_evaluacion_schema(proyecto)
+    progress(8, 'Preparando documento')
     doc = Document()
     _setup_document_fonts(doc)
     section = doc.sections[0]
@@ -1587,10 +3049,8 @@ def build_informe_proyecto_docx(
     section.left_margin = Cm(1.6)
     section.right_margin = Cm(1.6)
 
-    _add_header_logos(
-        doc,
-        subtitle_text='ENAP · Cotecmar · Universidad de la Costa  |  HATD — Informe de proyecto',
-    )
+    _add_header_logos(doc)
+    progress(12, 'Agregando información general')
 
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1625,12 +3085,22 @@ def build_informe_proyecto_docx(
     _add_etapa1_arboles_section(
         doc,
         schema,
-        include_weights=include_map_weights,
+        progress_callback=progress_callback,
     )
+    progress(58, 'Agregando alternativas')
     _add_alternativas_section(doc, proyecto)
+    progress(66, 'Agregando estructura jerárquica')
     _add_etapa1_estructura_jerarquica(doc, schema)
+    progress(75, 'Agregando pesos de los nodos')
     _add_etapa1_pesos_nodo(doc, schema)
-    _add_etapa2_placeholder(doc)
+    progress(84, 'Construyendo matrices de evaluación')
+    _add_etapa2_evaluaciones(
+        doc,
+        proyecto,
+        schema,
+        progress_callback=progress_callback,
+    )
+    progress(98, 'Guardando el documento Word')
 
     footer = doc.sections[0].footer
     fp = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
@@ -1640,6 +3110,7 @@ def build_informe_proyecto_docx(
 
     buf = BytesIO()
     doc.save(buf)
+    progress(99, 'Preparando descarga')
     return buf.getvalue()
 
 
@@ -1657,12 +3128,7 @@ def build_informe_curvas_docx(proyecto: Proyecto) -> bytes:
     section.left_margin = Cm(2)
     section.right_margin = Cm(2)
 
-    _add_header_logos(
-        doc,
-        subtitle_text=(
-            'ENAP · Cotecmar · Universidad de la Costa  |  HATD — Curvas de utilidad finales'
-        ),
-    )
+    _add_header_logos(doc)
 
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER

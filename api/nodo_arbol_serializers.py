@@ -71,7 +71,7 @@ class NodoArbolSerializer(serializers.ModelSerializer):
             children = cache.get(obj.id, [])
             return NodoArbolSerializer(children, many=True, context=self.context).data
         children = obj.hijos.filter(aplica=True).select_related('tipo_nivel').order_by(
-            'orden_visual', 'nombre', 'id'
+            'orden_visual', 'id'
         )
         return NodoArbolSerializer(children, many=True, context=self.context).data
 
@@ -278,10 +278,27 @@ def build_hijos_cache(omoe_id: int) -> dict[int, list[NodoArbol]]:
 
     def _sort_key(n: NodoArbol) -> tuple:
         tipo_orden = n.tipo_nivel.orden if n.tipo_nivel_id else 0
-        return (tipo_orden, n.orden_visual, n.nombre or '', n.id)
+        return (tipo_orden, n.orden_visual, n.id)
 
-    for nodes in by_parent.values():
-        nodes.sort(key=_sort_key)
+    for parent_id, nodes in by_parent.items():
+        # Autocorregir empates / ceros: orden de creación (id) como desempate estable.
+        orders = [n.orden_visual for n in nodes]
+        needs_renumber = (
+            len(nodes) > 1
+            and (len(set(orders)) != len(orders) or orders.count(0) > 1)
+        )
+        if needs_renumber:
+            sorted_nodes = sorted(nodes, key=lambda n: (n.orden_visual, n.id))
+            updates = []
+            for i, n in enumerate(sorted_nodes, start=1):
+                if n.orden_visual != i:
+                    n.orden_visual = i
+                    updates.append(n)
+            if updates:
+                NodoArbol.objects.bulk_update(updates, ['orden_visual'])
+            nodes[:] = sorted_nodes
+        else:
+            nodes.sort(key=_sort_key)
 
     return by_parent
 
