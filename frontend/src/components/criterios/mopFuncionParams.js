@@ -7,8 +7,7 @@
 
 export const FAMILIA_PARAM_SPECS = {
   razon_relativa: [
-    { key: 'L', label: 'L — límite inferior (constante)', type: 'number', required: true },
-    { key: 'U', label: 'U — límite superior (constante)', type: 'number', required: true },
+    { key: 'U', label: 'U — referencia (máximo)', type: 'number', required: true },
   ],
   min_max: [
     { key: 'L', label: 'L — límite inferior (constante)', type: 'number', required: true },
@@ -25,8 +24,7 @@ export const FAMILIA_PARAM_SPECS = {
     { key: 'k', label: 'k (pendiente)', type: 'number', required: true },
   ],
   razon_inversa: [
-    { key: 'L', label: 'L — límite inferior (constante)', type: 'number', required: true },
-    { key: 'U', label: 'U — límite superior (constante)', type: 'number', required: true },
+    { key: 'L', label: 'L — referencia (mínimo)', type: 'number', required: true },
   ],
   min_max_decreciente: [
     { key: 'L', label: 'L — límite inferior (constante)', type: 'number', required: true },

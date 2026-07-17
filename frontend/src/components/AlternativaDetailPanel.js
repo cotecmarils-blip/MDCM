@@ -10,6 +10,7 @@ import AlternativaFormFields from './AlternativaFormFields';
 import AlternativaViewContent from './AlternativaViewContent';
 import AlternativaCaracteristicasFields from './AlternativaCaracteristicasFields';
 import DocumentosList from './DocumentosList';
+import DeleteAlternativaModal from './DeleteAlternativaModal';
 import { getAlternativaInputClass, getAlternativaLabelClass } from './alternativaFormStyles';
 
 const emptyCapacidad = () => ({ _key: crypto.randomUUID(), nombre: '', descripcion: '' });
@@ -58,6 +59,8 @@ function AlternativaDetailPanel({
   const [removedCapacidadIds, setRemovedCapacidadIds] = useState([]);
   const [removedCaracteristicaIds, setRemovedCaracteristicaIds] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const isViewMode = !isNew && !isEditing;
 
@@ -236,14 +239,21 @@ function AlternativaDetailPanel({
     }
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm('¿Eliminar esta alternativa y todo su contenido?')) return;
+  const handleDelete = () => {
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
     try {
+      setDeleting(true);
       await alternativas.delete(alternativaId);
+      setShowDeleteModal(false);
       onDeleted();
     } catch (err) {
       console.error(err);
       alert('Error al eliminar');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -315,8 +325,18 @@ function AlternativaDetailPanel({
     );
   }
 
+  const deleteModal = showDeleteModal ? (
+    <DeleteAlternativaModal
+      nombre={existing?.nombre}
+      deleting={deleting}
+      onConfirm={handleConfirmDelete}
+      onCancel={() => !deleting && setShowDeleteModal(false)}
+    />
+  ) : null;
+
   if (isViewMode && existing) {
     return (
+      <>
       <div className="space-y-6">
         <div className="flex flex-wrap justify-between items-center gap-3">
           <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">
@@ -350,6 +370,8 @@ function AlternativaDetailPanel({
           onOpenConfigPlantillas={onOpenConfigPlantillas}
         />
       </div>
+      {deleteModal}
+      </>
     );
   }
 
@@ -361,6 +383,7 @@ function AlternativaDetailPanel({
   const canSave = !saving && formData.nombre.trim();
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="flex flex-col min-h-0">
       <div className="flex flex-wrap justify-between items-center gap-3 shrink-0 mb-4">
         <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">
@@ -506,6 +529,8 @@ function AlternativaDetailPanel({
         )}
       </div>
     </form>
+    {deleteModal}
+    </>
   );
 }
 

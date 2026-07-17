@@ -46,13 +46,13 @@ FAMILIA_FUNCIONES_DOC: dict[str, dict[str, Any]] = {
     'razon_relativa': {
         'etiqueta_ui': 'Razón relativa',
         'tipo_criterio': 'Más es mejor',
-        'parametros': ['L', 'U'],
+        'parametros': ['U'],
         'formula': (
-            'Utilidad lineal creciente entre L (u=0) y U (u=1): '
-            'u(x) = (x−L)/(U−L), recortada a [0, 1].'
+            'Razón (ratio) respecto a la referencia U: u(x) = x/U, recortada a [0, 1]. '
+            'Preserva proporciones (no resta L); distinta de min–max.'
         ),
-        'clase_pydecision': 'LinearUtilityFunction',
-        'estado': 'lineal',
+        'clase_pydecision': 'RatioUtilityFunction',
+        'estado': 'implementada',
     },
     'min_max': {
         'etiqueta_ui': 'Min-max',
@@ -97,12 +97,13 @@ FAMILIA_FUNCIONES_DOC: dict[str, dict[str, Any]] = {
     'razon_inversa': {
         'etiqueta_ui': 'Razón inversa',
         'tipo_criterio': 'Menos es mejor',
-        'parametros': ['L', 'U'],
+        'parametros': ['L'],
         'formula': (
-            'Lineal decreciente: u(x) = 1 − (x−L)/(U−L); a menor x, mayor utilidad.'
+            'Razón inversa respecto a L (mejor = menor): u(x) = L/x, recortada a [0, 1]. '
+            'Preserva proporciones; distinta de min–max decreciente.'
         ),
-        'clase_pydecision': 'LinearUtilityFunction',
-        'estado': 'lineal',
+        'clase_pydecision': 'RatioUtilityFunction',
+        'estado': 'implementada',
     },
     'min_max_decreciente': {
         'etiqueta_ui': 'Min-max decreciente',
@@ -147,11 +148,11 @@ FAMILIA_FUNCIONES_DOC: dict[str, dict[str, Any]] = {
         'tipo_criterio': 'Menos es mejor, con penalización potencialmente no lineal',
         'parametros': ['V'],
         'formula': (
-            'Pendiente: u=0 si x supera el umbral de veto V. '
-            'Actualmente aproximado con lineal decreciente L–U (V no aplicado aún).'
+            'Decreciente con veto duro: u=1 en L, baja linealmente a 0 en V; '
+            'u=0 para x ≥ V (veto absoluto).'
         ),
-        'clase_pydecision': 'LinearUtilityFunction',
-        'estado': 'pendiente',
+        'clase_pydecision': 'VetoUtilityFunction',
+        'estado': 'implementada',
     },
     'funcion_saturada': {
         'etiqueta_ui': 'Función saturada',
@@ -168,44 +169,42 @@ FAMILIA_FUNCIONES_DOC: dict[str, dict[str, Any]] = {
         'tipo_criterio': 'Existe un valor objetivo',
         'parametros': ['T', 'R'],
         'formula': (
-            'Pendiente: u decrece con |x−T| dentro de radio R. '
-            'Actualmente aproximado con lineal L–U (T, R no aplicados aún).'
+            'Cercanía a la meta T: u(x) = 1 − |x−T|/R, recortada a [0, 1]. '
+            'Máxima en T; decrece con la distancia dentro del radio R.'
         ),
-        'clase_pydecision': 'LinearUtilityFunction',
-        'estado': 'pendiente',
+        'clase_pydecision': 'DistanceUtilityFunction',
+        'estado': 'implementada',
     },
     'triangular': {
         'etiqueta_ui': 'Triangular',
         'tipo_criterio': 'Existe un intervalo o punto óptimo',
         'parametros': ['L', 'M', 'U'],
         'formula': (
-            'Pendiente: pico en M, u=0 en L y U. '
-            'Actualmente aproximado con lineal L–U (M no aplicado aún).'
+            'Pico triangular: u=0 en L y U, u=1 en el óptimo M; rampas lineales a cada lado.'
         ),
-        'clase_pydecision': 'LinearUtilityFunction',
-        'estado': 'pendiente',
+        'clase_pydecision': 'TriangularUtilityFunction',
+        'estado': 'implementada',
     },
     'trapezoidal': {
         'etiqueta_ui': 'Trapezoidal',
         'tipo_criterio': 'Existe un intervalo o punto óptimo',
         'parametros': ['L', 'M1', 'M2', 'U'],
         'formula': (
-            'Pendiente: meseta entre M1 y M2. '
-            'Actualmente aproximado con lineal L–U.'
+            'Meseta óptima: u=0 en L y U, sube a 1 en M1, meseta u=1 en [M1, M2], baja a 0 en U.'
         ),
-        'clase_pydecision': 'LinearUtilityFunction',
-        'estado': 'pendiente',
+        'clase_pydecision': 'TrapezoidalUtilityFunction',
+        'estado': 'implementada',
     },
     'distancia_ideal': {
         'etiqueta_ui': 'Distancia al ideal',
         'tipo_criterio': 'Existe un intervalo o punto óptimo',
         'parametros': ['I', 'dmax (opc.)'],
         'formula': (
-            'Pendiente: u decrece con |x−I|/dmax. '
-            'Actualmente aproximado con lineal L–U.'
+            'Cercanía al ideal I: u(x) = 1 − |x−I|/dmax, recortada a [0, 1]. '
+            'Máxima en I; decrece con la distancia.'
         ),
-        'clase_pydecision': 'LinearUtilityFunction',
-        'estado': 'pendiente',
+        'clase_pydecision': 'DistanceUtilityFunction',
+        'estado': 'implementada',
     },
     'escalas_discretas': {
         'etiqueta_ui': 'Escalas discretas',
@@ -231,11 +230,10 @@ FAMILIA_FUNCIONES_DOC: dict[str, dict[str, Any]] = {
         'tipo_criterio': 'Preferencia por categorías',
         'parametros': ['estados_opciones', 'equivalencias'],
         'formula': (
-            'Pendiente: u(x) desde tabla estado → utilidad (como Escalas discretas). '
-            'Usar «equivalencias» como mapping discreto en evolución futura.'
+            'u(x) desde tabla estado → utilidad (mapa discreto), igual que Escalas discretas.'
         ),
         'clase_pydecision': 'DiscreteUtilityFunction',
-        'estado': 'pendiente',
+        'estado': 'discreta',
     },
 }
 

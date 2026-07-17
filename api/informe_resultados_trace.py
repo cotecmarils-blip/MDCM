@@ -1144,24 +1144,52 @@ def radar_png(puntos: list[dict[str, Any]], dims: list[dict[str, Any]]) -> Bytes
     labels = [d['nombre'] for d in dims]
     angles = np.linspace(0, 2 * np.pi, len(dims), endpoint=False).tolist()
     angles += angles[:1]
-    fig, ax = plt.subplots(figsize=(5.4, 4.4), dpi=120, subplot_kw=dict(polar=True))
-    for i, p in enumerate(puntos[:8]):
-        vals = []
+
+    # Recolectar las series con valores completos por dimensión.
+    series = []
+    for p in puntos[:8]:
+        raw = []
         ok = True
         for d in dims:
             v = (p.get('valores') or {}).get(d['id'])
             if v is None:
                 ok = False
                 break
-            vals.append(float(v))
+            raw.append(float(v))
         if not ok:
             continue
+        series.append((p.get('label') or p.get('nombre'), raw))
+    if not series:
+        return None
+
+    # Normalización min–max por eje: cada dimensión suele tener escalas y
+    # unidades distintas (p. ej. Costo ~250 vs Efectividad ~0-1). Sin esto,
+    # el eje de mayor magnitud domina y el resto se aplasta hacia el centro,
+    # dando la falsa impresión de "un solo eje".
+    n_dims = len(dims)
+    col_min = [min(s[1][j] for s in series) for j in range(n_dims)]
+    col_max = [max(s[1][j] for s in series) for j in range(n_dims)]
+
+    def _norm(v: float, j: int) -> float:
+        lo, hi = col_min[j], col_max[j]
+        if hi <= lo:
+            return 0.5  # sin variación en el eje: punto medio
+        return (v - lo) / (hi - lo)
+
+    fig, ax = plt.subplots(figsize=(5.4, 4.4), dpi=120, subplot_kw=dict(polar=True))
+    for i, (label, raw) in enumerate(series):
+        vals = [_norm(raw[j], j) for j in range(n_dims)]
         vals += vals[:1]
-        ax.plot(angles, vals, color=_COLORS[i % len(_COLORS)], linewidth=1.6, label=p.get('label') or p.get('nombre'))
-        ax.fill(angles, vals, color=_COLORS[i % len(_COLORS)], alpha=0.08)
+        color = _COLORS[i % len(_COLORS)]
+        ax.plot(angles, vals, color=color, linewidth=1.6, label=label)
+        ax.fill(angles, vals, color=color, alpha=0.08)
+
     ax.set_xticks(angles[:-1])
     ax.set_xticklabels([lb[:18] for lb in labels], fontsize=8)
-    ax.set_title('Radar — dimensiones del cálculo', fontsize=11)
+    ax.set_ylim(0, 1)
+    ax.set_yticks([0.25, 0.5, 0.75, 1.0])
+    ax.set_yticklabels(['25%', '50%', '75%', '100%'], fontsize=7, color=_SPINE_COLOR)
+    ax.set_title('Radar — dimensiones del cálculo (normalizado por eje)', fontsize=11)
     ax.legend(loc='upper right', bbox_to_anchor=(1.35, 1.1), fontsize=7)
     fig.tight_layout()
     buf = BytesIO()

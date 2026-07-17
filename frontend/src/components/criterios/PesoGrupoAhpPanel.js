@@ -19,7 +19,7 @@ const TABS = [
 const cellInputClass =
   'w-full min-w-[2.75rem] max-w-[4.5rem] text-center text-[11px] px-1 py-1 rounded border border-indigo-300/60 bg-white dark:bg-navy-900/50 text-gray-800 dark:text-gray-100 font-semibold tabular-nums input-focus';
 
-function AhpMatrixCell({ value, disabled, saving, title, onCommit }) {
+function AhpMatrixCell({ value, disabled, title, onCommit }) {
   const [draft, setDraft] = useState(formatMatrixCellDisplay(value));
   const [focused, setFocused] = useState(false);
 
@@ -31,7 +31,7 @@ function AhpMatrixCell({ value, disabled, saving, title, onCommit }) {
     <input
       type="text"
       inputMode="decimal"
-      disabled={disabled || saving}
+      disabled={disabled}
       value={focused ? draft : formatMatrixCellDisplay(value)}
       title={title}
       onFocus={() => {
@@ -53,7 +53,7 @@ function AhpMatrixCell({ value, disabled, saving, title, onCommit }) {
   );
 }
 
-function AhpHalfMatrix({ matrizIds, nombresById, juicios, disabled, saving, onCellChange }) {
+function AhpHalfMatrix({ matrizIds, nombresById, juicios, disabled, onCellChange }) {
   if (matrizIds.length < 2) return null;
 
   return (
@@ -113,7 +113,6 @@ function AhpHalfMatrix({ matrizIds, nombresById, juicios, disabled, saving, onCe
                         <AhpMatrixCell
                           value={val}
                           disabled={disabled}
-                          saving={saving}
                           title={`Importancia de «${nombresById[idRow]}» respecto a «${nombresById[idCol]}»`}
                           onCommit={(next) => onCellChange(idRow, idCol, next)}
                         />
@@ -242,6 +241,7 @@ function PesoGrupoAhpPanel({
           });
           setPayload(res.data || {});
           setDirty(false);
+          setError(null);
         } catch (err) {
           setError(err.response?.data?.detail || 'No se pudo guardar la matriz.');
         } finally {
@@ -253,6 +253,7 @@ function PesoGrupoAhpPanel({
   );
 
   const patchCell = (idRow, idCol, value) => {
+    if (error) setError(null);
     setJuicios((prev) => {
       const next = setImportanceRowOverCol(prev, idRow, idCol, value);
       setDirty(true);
@@ -375,7 +376,6 @@ function PesoGrupoAhpPanel({
               nombresById={nombresById}
               juicios={juicios}
               disabled={disabled}
-              saving={saving}
               onCellChange={patchCell}
             />
           )}

@@ -2110,6 +2110,16 @@ def _utility_equation_label(leaf: dict[str, Any]) -> str:
         return 'u(x) = ln(1+k·n(x))/ln(1+k)'
     if utility_type == 'SigmoidalUtilityFunction':
         return 'u(x) = 1/(1+exp(−k·(n(x)−m)))'
+    if utility_type == 'RatioUtilityFunction':
+        return 'u(x) = x/U' if direction == 'creciente' else 'u(x) = L/x'
+    if utility_type == 'TriangularUtilityFunction':
+        return 'u(x) = triangular: 0 en L y U, 1 en el pico M'
+    if utility_type == 'TrapezoidalUtilityFunction':
+        return 'u(x) = trapezoidal: meseta 1 en [M1, M2], 0 en L y U'
+    if utility_type == 'DistanceUtilityFunction':
+        return 'u(x) = clip(1 − |x−T|/R, 0, 1)'
+    if utility_type == 'VetoUtilityFunction':
+        return 'u(x) = clip(1 − (x−L)/(V−L), 0, 1); u=0 si x ≥ V'
     if utility_type == 'DiscreteUtilityFunction':
         return 'u(x) = valor de la escala discreta configurada'
     return f'u(x) — {family}'
@@ -2260,6 +2270,11 @@ def _leaf_is_quantitative(leaf: dict[str, Any]) -> bool:
         'ExponentialUtilityFunction',
         'LogarithmicUtilityFunction',
         'SigmoidalUtilityFunction',
+        'RatioUtilityFunction',
+        'TriangularUtilityFunction',
+        'TrapezoidalUtilityFunction',
+        'DistanceUtilityFunction',
+        'VetoUtilityFunction',
     }
 
 

@@ -22,13 +22,11 @@ export const FAMILIAS_POR_TIPO = {
     { value: 'razon_relativa', label: 'Razón relativa' },
     { value: 'min_max', label: 'Min-max' },
     { value: 'meta_saturada', label: 'Meta saturada' },
-    { value: 'umbral_creciente', label: 'Umbral creciente' },
     { value: 'exponencial_creciente', label: 'Exponencial creciente' },
   ],
   menos_es_mejor: [
     { value: 'razon_inversa', label: 'Razón inversa' },
     { value: 'min_max_decreciente', label: 'Min-max decreciente' },
-    { value: 'umbral_decreciente', label: 'Umbral decreciente' },
     { value: 'exponencial_decreciente', label: 'Exponencial decreciente' },
   ],
   menos_es_mejor_penalizacion: [
@@ -47,9 +45,18 @@ export const FAMILIAS_POR_TIPO = {
   ],
   preferencia_categorias: [
     { value: 'escalas_discretas', label: 'Escalas discretas' },
-    { value: 'funciones_tramos', label: 'Funciones por tramos' },
     { value: 'tablas_equivalencia', label: 'Tablas de equivalencia' },
   ],
+};
+
+/**
+ * Familias retiradas del selector por ser redundantes o no evaluables.
+ * Se remapean a su equivalente vigente para que criterios ya guardados
+ * conserven el mismo comportamiento numérico al editarlos.
+ */
+export const LEGACY_FAMILIA_ALIAS = {
+  umbral_creciente: 'min_max',
+  umbral_decreciente: 'min_max_decreciente',
 };
 
 export function getFamiliasForTipo(tipo) {
@@ -83,8 +90,9 @@ export function normalizeMopCriterioFields(tipo, familia, parametros = null) {
       parametros_funcion: {},
     };
   }
-  const valid = familias.some((f) => f.value === familia);
-  const resolvedFamilia = valid ? familia : familias[0].value;
+  const aliased = LEGACY_FAMILIA_ALIAS[familia] || familia;
+  const valid = familias.some((f) => f.value === aliased);
+  const resolvedFamilia = valid ? aliased : familias[0].value;
   return {
     tipo_criterio: tipo || familias[0] ? tipo : '',
     familia_funciones: resolvedFamilia,

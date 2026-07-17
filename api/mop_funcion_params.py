@@ -10,8 +10,7 @@ from decimal import Decimal, InvalidOperation
 # Especificación: key, label, type (number|text|textarea|option_pool|paired_list), required
 FAMILIA_PARAM_SPECS = {
     'razon_relativa': [
-        {'key': 'L', 'label': 'L (límite inferior)', 'type': 'number', 'required': True},
-        {'key': 'U', 'label': 'U (límite superior)', 'type': 'number', 'required': True},
+        {'key': 'U', 'label': 'U (referencia / máximo)', 'type': 'number', 'required': True},
     ],
     'min_max': [
         {'key': 'L', 'label': 'L (límite inferior)', 'type': 'number', 'required': True},
@@ -30,8 +29,7 @@ FAMILIA_PARAM_SPECS = {
         {'key': 'k', 'label': 'k (pendiente)', 'type': 'number', 'required': True},
     ],
     'razon_inversa': [
-        {'key': 'L', 'label': 'L (límite inferior)', 'type': 'number', 'required': True},
-        {'key': 'U', 'label': 'U (límite superior)', 'type': 'number', 'required': True},
+        {'key': 'L', 'label': 'L (referencia / mínimo)', 'type': 'number', 'required': True},
     ],
     'min_max_decreciente': [
         {'key': 'L', 'label': 'L (límite inferior)', 'type': 'number', 'required': True},

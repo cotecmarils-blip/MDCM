@@ -35,8 +35,8 @@ export const TIPO_CRITERIO_FORMULAS = {
 
 export const FAMILIA_FUNCIONES_FORMULAS = {
   razon_relativa: {
-    latex: 'u(x) = \\frac{x - L}{U - L}',
-    hint: 'Lineal creciente entre L (u=0) y U (u=1).',
+    latex: 'u(x) = \\dfrac{x}{U}',
+    hint: 'Razón (ratio) respecto a la referencia U; preserva proporciones (no resta L).',
     curve: 'increasing',
   },
   min_max: {
@@ -45,8 +45,8 @@ export const FAMILIA_FUNCIONES_FORMULAS = {
     curve: 'increasing',
   },
   meta_saturada: {
-    latex: 'u(x)=\\dfrac{\\ln(1+kn)}{\\ln(1+k)},\\quad n=\\dfrac{x-L}{U-L}',
-    hint: 'Crecimiento logarítmico que satura hacia la meta.',
+    latex: 'u(x)=\\dfrac{\\ln(1+T\\,n)}{\\ln(1+T)},\\quad n=\\dfrac{x-L}{U-L}',
+    hint: 'Logarítmica que satura hacia la meta; T controla la curvatura (L, U = umbral/meta del nodo).',
     curve: 'logarithmic',
   },
   umbral_creciente: {
@@ -60,8 +60,8 @@ export const FAMILIA_FUNCIONES_FORMULAS = {
     curve: 'exponential_inc',
   },
   razon_inversa: {
-    latex: 'u(x) = 1 - \\frac{x - L}{U - L}',
-    hint: 'Lineal decreciente: menor x implica mayor utilidad.',
+    latex: 'u(x) = \\dfrac{L}{x}',
+    hint: 'Razón inversa respecto a L (menor x, mayor utilidad); preserva proporciones.',
     curve: 'decreasing',
   },
   min_max_decreciente: {
@@ -105,8 +105,8 @@ export const FAMILIA_FUNCIONES_FORMULAS = {
     curve: 'triangular',
   },
   trapezoidal: {
-    latex: 'u(x) = 1 \\text{ en } [M_1, M_2]',
-    hint: 'Meseta óptima entre M₁ y M₂ con rampas laterales.',
+    latex: 'u(x)=0\\ (x\\le L),\\ \\dfrac{x-L}{M_1-L}\\ (L<x<M_1),\\ 1\\ (M_1\\le x\\le M_2),\\ \\dfrac{U-x}{U-M_2}\\ (M_2<x<U),\\ 0\\ (x\\ge U)',
+    hint: 'Meseta óptima entre M₁ y M₂ con rampas desde L y hasta U.',
     curve: 'trapezoidal',
   },
   distancia_ideal: {

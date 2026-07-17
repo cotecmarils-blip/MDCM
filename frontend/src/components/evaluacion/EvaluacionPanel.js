@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { alternativas, evaluacionApi } from '../../api';
+import { alternativas, evaluacionApi, proyectos } from '../../api';
 import SplitColumnLayout from '../../layout/SplitColumnLayout';
 import EvaluacionMatrix from './EvaluacionMatrix';
 import ExportablesDropdown from './ExportablesDropdown';
@@ -65,6 +65,7 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState(null);
   const [exportingCurvas, setExportingCurvas] = useState(false);
+  const [exportingAlternativasJson, setExportingAlternativasJson] = useState(false);
   const [exportingCurvasWord, setExportingCurvasWord] = useState(false);
   const [exportingCostos, setExportingCostos] = useState(false);
   const [exportingProyecto, setExportingProyecto] = useState(false);
@@ -253,6 +254,41 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
       setError('No se pudieron exportar las curvas de utilidad.');
     } finally {
       setExportingCurvas(false);
+    }
+  };
+
+  const handleExportAlternativasJson = async () => {
+    try {
+      setExportingAlternativasJson(true);
+      const res = await proyectos.exportAlternatives(proyectoId);
+      const blob = res.data instanceof Blob
+        ? res.data
+        : new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+      const disposition = res.headers?.['content-disposition'] || '';
+      const match = /filename="?([^"]+)"?/i.exec(disposition);
+      const filename = match?.[1] || `alternatives-proyecto-${proyectoId}.json`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      let detail = 'No se pudo exportar la evaluación (JSON).';
+      const data = err.response?.data;
+      if (data instanceof Blob) {
+        try {
+          detail = JSON.parse(await data.text()).detail || detail;
+        } catch {
+          /* keep default */
+        }
+      } else if (data?.detail) {
+        detail = data.detail;
+      }
+      setError(detail);
+    } finally {
+      setExportingAlternativasJson(false);
     }
   };
 
@@ -532,6 +568,17 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
                 description: 'Curvas finales por nodo terminal y misión (JSON).',
                 onClick: handleExportCurvas,
                 disabled: exportingCurvas || loadingSchema,
+              },
+              {
+                key: 'alternativas-json',
+                label: exportingAlternativasJson
+                  ? 'Exportando…'
+                  : 'Exportar evaluación (JSON)',
+                description:
+                  'Valores (x) cargados por alternativa en formato plano '
+                  + '(tipo oceanographic_alternatives.json).',
+                onClick: handleExportAlternativasJson,
+                disabled: exportingAlternativasJson || loadingSchema,
               },
             ]}
           />

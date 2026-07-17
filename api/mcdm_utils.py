@@ -92,15 +92,17 @@ def build_utility_function(dp: DpCriterio, mop: MopCriterio) -> dict[str, Any]:
 
     Mapeo resumido (etiqueta UI → clase):
 
-    - **Escalas discretas** → ``DiscreteUtilityFunction``
+    - **Escalas discretas** / **Tablas de equivalencia** → ``DiscreteUtilityFunction``
     - **Exponencial creciente** / **Exponencial decreciente** → ``ExponentialUtilityFunction``
     - **Meta saturada** / **Función saturada** → ``LogarithmicUtilityFunction``
     - **Logística decreciente** → ``SigmoidalUtilityFunction``
-    - **Razón relativa**, **Min-max**, **Umbral creciente/decreciente**,
-      **Razón inversa**, **Min-max decreciente** → ``LinearUtilityFunction``
-    - **Triangular**, **Trapezoidal**, **Distancia a meta**, **Distancia al ideal**,
-      **Umbral de veto**, **Funciones por tramos**, **Tablas de equivalencia**:
-      parámetros en UI; varias aún usan lineal o están pendientes (ver doc).
+    - **Razón relativa** / **Razón inversa** → ``RatioUtilityFunction`` (x/U, L/x)
+    - **Triangular** → ``TriangularUtilityFunction`` (pico en M)
+    - **Trapezoidal** → ``TrapezoidalUtilityFunction`` (meseta M1–M2)
+    - **Distancia a meta** / **Distancia al ideal** → ``DistanceUtilityFunction``
+    - **Umbral de veto** → ``VetoUtilityFunction`` (0 si x ≥ V)
+    - **Min-max** / **Min-max decreciente** (y legacy **Umbral creciente/decreciente**,
+      **Funciones por tramos**) → ``LinearUtilityFunction`` (normalización min–max L–U)
 
     Parámetros habituales: L, U (límites), k (pendiente), T/S (meta/saturación),
     x0 (inflexión logística), V (veto), M/M1/M2 (óptimo/meseta), I/dmax (ideal).
@@ -175,9 +177,78 @@ def build_utility_function(dp: DpCriterio, mop: MopCriterio) -> dict[str, Any]:
             **base,
         }
 
-    # UI: Razón relativa, Min-max, Umbral creciente/decreciente, Razón inversa,
-    # Min-max decreciente, Umbral de veto, Distancia a meta, Triangular, Trapezoidal,
-    # Distancia al ideal, Funciones por tramos (pendiente), etc.
+    if familia in ('razon_relativa', 'razon_inversa'):
+        # UI: «Razón relativa» (beneficio, x/U) / «Razón inversa» (costo, L/x).
+        # Normalización por razón: distinta de min–max (no resta el límite inferior).
+        return {'type': 'RatioUtilityFunction', **base}
+
+    if familia == 'triangular':
+        # UI: «Triangular» — óptimo en el punto M.
+        peak = _to_float(params.get('M'))
+        if peak is None:
+            peak = (threshold + goal) / 2.0
+        return {'type': 'TriangularUtilityFunction', 'peak': peak, **base}
+
+    if familia == 'trapezoidal':
+        # UI: «Trapezoidal» — meseta óptima entre M1 y M2.
+        span = (goal - threshold) or 1.0
+        m1 = _to_float(params.get('M1'))
+        m2 = _to_float(params.get('M2'))
+        if m1 is None:
+            m1 = threshold + span / 3.0
+        if m2 is None:
+            m2 = threshold + 2.0 * span / 3.0
+        return {
+            'type': 'TrapezoidalUtilityFunction',
+            'plateau_start': m1,
+            'plateau_end': m2,
+            **base,
+        }
+
+    if familia in ('distancia_meta', 'distancia_ideal'):
+        # UI: «Distancia a meta» (T, R) / «Distancia al ideal» (I, dmax).
+        target = _to_float(_first_present(params.get('T'), params.get('I')))
+        radius = _to_float(_first_present(params.get('R'), params.get('dmax')))
+        if target is None:
+            target = (threshold + goal) / 2.0
+        if radius is None or radius == 0:
+            radius = abs(goal - threshold) / 2.0 or 1.0
+        dist_base = dict(base)
+        dist_base['threshold'] = target - radius
+        dist_base['goal'] = target + radius
+        return {
+            'type': 'DistanceUtilityFunction',
+            'target': target,
+            'radius': radius,
+            **dist_base,
+        }
+
+    if familia == 'umbral_veto':
+        # UI: «Umbral de veto» — u decrece hasta 0 y veto absoluto en V.
+        veto = _to_float(params.get('V'))
+        if veto is None:
+            veto = goal
+        veto_base = dict(base)
+        veto_base['is_increasing'] = False
+        veto_base['goal'] = veto
+        return {'type': 'VetoUtilityFunction', 'veto': veto, **veto_base}
+
+    if familia == 'tablas_equivalencia':
+        # UI: «Tablas de equivalencia» — estado → utilidad (mapa discreto).
+        mapping = {}
+        for entry in params.get('equivalencias') or []:
+            est = entry.get('estado')
+            util = entry.get('utilidad')
+            if est is not None and util is not None and str(est).strip() != '':
+                try:
+                    mapping[str(est)] = float(util)
+                except (TypeError, ValueError):
+                    continue
+        if mapping:
+            return {'type': 'DiscreteUtilityFunction', 'mapping': mapping}
+
+    # Fallback lineal (normalización min–max L–U): Min-max, Min-max decreciente,
+    # Umbral creciente/decreciente (legacy) y Funciones por tramos (sin evaluador).
     return {'type': 'LinearUtilityFunction', **base}
 
 

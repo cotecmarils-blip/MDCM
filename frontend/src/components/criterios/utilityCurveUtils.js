@@ -61,6 +61,60 @@ function evalSigmoidal(x, spec) {
   return mapToUtilityRange(baseU, spec);
 }
 
+// Mapea una utilidad base ya orientada (mayor = mejor) al rango [tu, gu] sin invertir.
+function mapOriented(baseU, spec) {
+  const bu = clip(baseU, 0, 1);
+  return spec.threshold_utility + bu * (spec.goal_utility - spec.threshold_utility);
+}
+
+function evalRatio(x, spec) {
+  let base;
+  if (spec.is_increasing) {
+    base = spec.goal === 0 ? 0 : clip(x / spec.goal, 0, 1);
+  } else if (x <= 0) {
+    base = 1;
+  } else if (spec.threshold <= 0) {
+    base = 0;
+  } else {
+    base = clip(spec.threshold / x, 0, 1);
+  }
+  return mapOriented(base, spec);
+}
+
+function evalTriangular(x, spec) {
+  const { threshold: L, goal: U, peak: M } = spec;
+  let base;
+  if (U <= L || x <= L || x >= U) base = 0;
+  else if (x <= M) base = M > L ? (x - L) / (M - L) : 1;
+  else base = U > M ? (U - x) / (U - M) : 1;
+  return mapOriented(base, spec);
+}
+
+function evalTrapezoidal(x, spec) {
+  const { threshold: L, goal: U, plateau_start: M1, plateau_end: M2 } = spec;
+  let base;
+  if (U <= L || x <= L || x >= U) base = 0;
+  else if (x < M1) base = M1 > L ? (x - L) / (M1 - L) : 1;
+  else if (x <= M2) base = 1;
+  else base = U > M2 ? (U - x) / (U - M2) : 1;
+  return mapOriented(base, spec);
+}
+
+function evalDistance(x, spec) {
+  const r = spec.radius || 1;
+  const base = 1 - Math.abs(x - spec.target) / r;
+  return mapOriented(base, spec);
+}
+
+function evalVeto(x, spec) {
+  const { threshold: L, veto: V } = spec;
+  let base;
+  if (x >= V) base = 0;
+  else if (V > L) base = clip(1 - (x - L) / (V - L), 0, 1);
+  else base = x <= L ? 1 : 0;
+  return mapOriented(base, spec);
+}
+
 /**
  * Construye especificación de utilidad compatible con evaluateUtility().
  * @param {{ familia?: string, params?: object, tipoCriterio?: string, tipoDato?: string }} cfg
@@ -143,6 +197,77 @@ export function buildUtilitySpec({
     };
   }
 
+  if (fam === 'razon_relativa' || fam === 'razon_inversa') {
+    // Razón: creciente u=x/U (dominio [0,U]); decreciente u=L/x (dominio
+    // [L, 5L]). Solo pide un parámetro (U o L); el otro extremo es para
+    // graficar la vista previa con un rango razonable.
+    const rbase = { ...base };
+    if (rbase.is_increasing) {
+      rbase.threshold = 0;
+      if (!(rbase.goal > 0)) rbase.goal = 1;
+    } else {
+      if (!(rbase.threshold > 0)) rbase.threshold = (rbase.goal || 10) * 0.1 || 1;
+      rbase.goal = rbase.threshold * 5;
+    }
+    return { type: 'RatioUtilityFunction', ...rbase };
+  }
+
+  if (fam === 'triangular') {
+    const peak = toFloat(p.M) ?? (threshold + goal) / 2;
+    return { type: 'TriangularUtilityFunction', peak, ...base };
+  }
+
+  if (fam === 'trapezoidal') {
+    const span = (goal - threshold) || 1;
+    const plateauStart = toFloat(p.M1) ?? threshold + span / 3;
+    const plateauEnd = toFloat(p.M2) ?? threshold + (2 * span) / 3;
+    return {
+      type: 'TrapezoidalUtilityFunction',
+      plateau_start: plateauStart,
+      plateau_end: plateauEnd,
+      ...base,
+    };
+  }
+
+  if (fam === 'distancia_meta' || fam === 'distancia_ideal') {
+    const target = toFloat(firstPresent(p.T, p.I)) ?? (threshold + goal) / 2;
+    let radius = toFloat(firstPresent(p.R, p.dmax));
+    if (radius == null || radius === 0) radius = Math.abs(goal - threshold) / 2 || 1;
+    return {
+      type: 'DistanceUtilityFunction',
+      target,
+      radius,
+      ...base,
+      threshold: target - radius,
+      goal: target + radius,
+    };
+  }
+
+  if (fam === 'umbral_veto') {
+    const veto = toFloat(p.V) ?? goal;
+    return {
+      type: 'VetoUtilityFunction',
+      veto,
+      ...base,
+      is_increasing: false,
+      goal: veto,
+    };
+  }
+
+  if (fam === 'tablas_equivalencia') {
+    const mapping = {};
+    (p.equivalencias || []).forEach((entry) => {
+      const est = entry?.estado;
+      const util = entry?.utilidad;
+      if (est != null && util != null && String(est).trim() !== '') {
+        mapping[String(est)] = Number(util);
+      }
+    });
+    if (Object.keys(mapping).length) {
+      return { type: 'DiscreteUtilityFunction', mapping };
+    }
+  }
+
   return { type: 'LinearUtilityFunction', ...base };
 }
 
@@ -171,6 +296,16 @@ export function evaluateUtility(rawValue, spec) {
       return evalLogarithmic(x, spec);
     case 'SigmoidalUtilityFunction':
       return evalSigmoidal(x, spec);
+    case 'RatioUtilityFunction':
+      return evalRatio(x, spec);
+    case 'TriangularUtilityFunction':
+      return evalTriangular(x, spec);
+    case 'TrapezoidalUtilityFunction':
+      return evalTrapezoidal(x, spec);
+    case 'DistanceUtilityFunction':
+      return evalDistance(x, spec);
+    case 'VetoUtilityFunction':
+      return evalVeto(x, spec);
     default:
       return evalLinear(x, spec);
   }

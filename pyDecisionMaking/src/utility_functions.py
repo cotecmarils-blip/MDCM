@@ -240,6 +240,159 @@ class SigmoidalUtilityFunction(ContinuousUtilityFunction):
         return d
 
 
+class RatioUtilityFunction(ContinuousUtilityFunction):
+    """Normalización por razón (ratio), distinta de min–max.
+
+  Familias UI: Razón relativa (creciente), Razón inversa (decreciente).
+  - Creciente (beneficio): u(x) = clip(x / U, 0, 1) — razón respecto a la referencia U.
+  - Decreciente (costo): u(x) = clip(L / x, 0, 1) — razón inversa respecto a L.
+  A diferencia de min–max, no resta el límite inferior: preserva proporciones.
+    """
+
+    def _base_utility(self, x: float) -> float:
+        if self.is_increasing:
+            if self.goal == 0:
+                return 0.0
+            return float(np.clip(x / self.goal, 0.0, 1.0))
+        # Decreciente (costo): menor x → mayor utilidad.
+        if x is None:
+            return 0.0
+        if x <= 0:
+            return 1.0
+        if self.threshold <= 0:
+            return 0.0
+        return float(np.clip(self.threshold / x, 0.0, 1.0))
+
+    def evaluate(self, x: float) -> float:
+        base_u = self._base_utility(x)
+        # base_u ya está orientado según el sentido; mapear sin invertir.
+        return self.threshold_utility + base_u * (self.goal_utility - self.threshold_utility)
+
+
+class TriangularUtilityFunction(ContinuousUtilityFunction):
+    """Utilidad triangular con óptimo en un punto interior.
+
+  Familia UI: Triangular (existe un intervalo/punto óptimo).
+  u=0 en L y U; u=1 en el pico M; rampas lineales a cada lado.
+    """
+
+    def __init__(self, threshold: float, goal: float,
+                 threshold_utility: float = 0.0, goal_utility: float = 1.0,
+                 is_increasing: bool = True, peak: float = None):
+        super().__init__(threshold, goal, threshold_utility, goal_utility, is_increasing)
+        self.peak = peak if peak is not None else (threshold + goal) / 2.0
+
+    def evaluate(self, x: float) -> float:
+        L, U, M = self.threshold, self.goal, self.peak
+        if U <= L or x <= L or x >= U:
+            base_u = 0.0
+        elif x <= M:
+            base_u = (x - L) / (M - L) if M > L else 1.0
+        else:
+            base_u = (U - x) / (U - M) if U > M else 1.0
+        base_u = float(np.clip(base_u, 0.0, 1.0))
+        return self.threshold_utility + base_u * (self.goal_utility - self.threshold_utility)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = super().to_dict()
+        d["peak"] = self.peak
+        return d
+
+
+class TrapezoidalUtilityFunction(ContinuousUtilityFunction):
+    """Utilidad trapezoidal con meseta óptima.
+
+  Familia UI: Trapezoidal (existe un intervalo óptimo).
+  u=0 en L y U; sube a 1 en M1; meseta u=1 en [M1, M2]; baja a 0 en U.
+    """
+
+    def __init__(self, threshold: float, goal: float,
+                 threshold_utility: float = 0.0, goal_utility: float = 1.0,
+                 is_increasing: bool = True, plateau_start: float = None,
+                 plateau_end: float = None):
+        super().__init__(threshold, goal, threshold_utility, goal_utility, is_increasing)
+        span = (goal - threshold) or 1.0
+        self.plateau_start = plateau_start if plateau_start is not None else threshold + span / 3.0
+        self.plateau_end = plateau_end if plateau_end is not None else threshold + 2.0 * span / 3.0
+
+    def evaluate(self, x: float) -> float:
+        L, U = self.threshold, self.goal
+        M1, M2 = self.plateau_start, self.plateau_end
+        if U <= L or x <= L or x >= U:
+            base_u = 0.0
+        elif x < M1:
+            base_u = (x - L) / (M1 - L) if M1 > L else 1.0
+        elif x <= M2:
+            base_u = 1.0
+        else:
+            base_u = (U - x) / (U - M2) if U > M2 else 1.0
+        base_u = float(np.clip(base_u, 0.0, 1.0))
+        return self.threshold_utility + base_u * (self.goal_utility - self.threshold_utility)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = super().to_dict()
+        d["plateau_start"] = self.plateau_start
+        d["plateau_end"] = self.plateau_end
+        return d
+
+
+class DistanceUtilityFunction(ContinuousUtilityFunction):
+    """Utilidad por cercanía a un valor objetivo/ideal.
+
+  Familias UI: Distancia a meta (T, R), Distancia al ideal (I, dmax).
+  u(x) = clip(1 − |x − T| / R, 0, 1): máxima en el objetivo, decrece con la distancia.
+    """
+
+    def __init__(self, threshold: float, goal: float,
+                 threshold_utility: float = 0.0, goal_utility: float = 1.0,
+                 is_increasing: bool = True, target: float = None,
+                 radius: float = 1.0):
+        super().__init__(threshold, goal, threshold_utility, goal_utility, is_increasing)
+        self.target = target if target is not None else (threshold + goal) / 2.0
+        self.radius = radius if radius else 1.0
+
+    def evaluate(self, x: float) -> float:
+        r = self.radius if self.radius else 1.0
+        base_u = 1.0 - abs(x - self.target) / r
+        base_u = float(np.clip(base_u, 0.0, 1.0))
+        return self.threshold_utility + base_u * (self.goal_utility - self.threshold_utility)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = super().to_dict()
+        d["target"] = self.target
+        d["radius"] = self.radius
+        return d
+
+
+class VetoUtilityFunction(ContinuousUtilityFunction):
+    """Utilidad decreciente con veto duro.
+
+  Familia UI: Umbral de veto (menos es mejor con penalización).
+  u=1 en L y decrece linealmente hasta 0 en V; u=0 para x ≥ V (veto absoluto).
+    """
+
+    def __init__(self, threshold: float, goal: float,
+                 threshold_utility: float = 0.0, goal_utility: float = 1.0,
+                 is_increasing: bool = False, veto: float = None):
+        super().__init__(threshold, goal, threshold_utility, goal_utility, is_increasing)
+        self.veto = veto if veto is not None else goal
+
+    def evaluate(self, x: float) -> float:
+        L, V = self.threshold, self.veto
+        if x >= V:
+            base_u = 0.0
+        elif V > L:
+            base_u = float(np.clip(1.0 - (x - L) / (V - L), 0.0, 1.0))
+        else:
+            base_u = 1.0 if x <= L else 0.0
+        return self.threshold_utility + base_u * (self.goal_utility - self.threshold_utility)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = super().to_dict()
+        d["veto"] = self.veto
+        return d
+
+
 class DiscreteUtilityFunction(UtilityFunction):
     """Utilidad por categoría.
 
