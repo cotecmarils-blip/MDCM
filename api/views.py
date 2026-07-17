@@ -435,6 +435,192 @@ class ProyectoViewSet(AuthScopedViewSetMixin, viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    @staticmethod
+    def _arbol_backup_dict(backup):
+        return {
+            'id': backup.id,
+            'nombre': backup.nombre,
+            'descripcion': backup.descripcion or '',
+            'omoe_nombre': backup.omoe_nombre or '',
+            'rama_evaluacion': backup.rama_evaluacion or '',
+            'nodos_count': backup.nodos_count,
+            'creado_por': (
+                getattr(backup.creado_por, 'username', None) if backup.creado_por_id else None
+            ),
+            'fecha_creacion': backup.fecha_creacion.isoformat() if backup.fecha_creacion else None,
+        }
+
+    @action(detail=True, methods=['get'], url_path='export-arbol')
+    def export_arbol(self, request, pk=None):
+        """Exporta una dimensión (árbol) a JSON re-importable (ciclo export→import)."""
+        from .dimension_clone_service import serialize_dimension
+        from .models import Omoe
+
+        proyecto = self.get_object()
+        omoe_id = request.query_params.get('omoe')
+        qs = Omoe.objects.filter(proyecto=proyecto)
+        omoe = (
+            qs.filter(pk=omoe_id).first()
+            if omoe_id
+            else qs.order_by('orden', 'id').first()
+        )
+        if omoe is None:
+            return Response(
+                {'detail': 'No hay dimensión para exportar.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        data = serialize_dimension(omoe)
+        slug = (omoe.nombre_modelo or 'arbol').replace(' ', '_')[:40]
+        return self._json_download_response(data, f'arbol_{slug}.json')
+
+    @action(detail=True, methods=['post'], url_path='importar-arbol-json')
+    def importar_arbol_json(self, request, pk=None):
+        """Reconstruye una dimensión desde un JSON exportado (import del ciclo)."""
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from .dimension_clone_service import rebuild_dimension_from_data
+        from .models import Omoe
+        from .omoe_serializers import OmoeSerializer
+
+        proyecto = self.get_object()
+        if not can_write_resource(request.user, proyecto, 'omoe'):
+            return Response(
+                {'detail': 'Sin permiso para importar árboles en este proyecto.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        body = request.data if isinstance(request.data, dict) else {}
+        data = body.get('data')
+        if data is None and body.get('omoe') is not None:
+            # Permite enviar directamente el JSON exportado (sin envolver en «data»).
+            data = body
+        nombre = body.get('nombre_modelo')
+        try:
+            result = rebuild_dimension_from_data(data, proyecto, nombre_modelo=nombre)
+        except DjangoValidationError as exc:
+            msg = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        dest = Omoe.objects.prefetch_related(*OMOE_TREE_PREFETCH).get(pk=result['omoe_id'])
+        return Response(
+            {**result, 'omoe': OmoeSerializer(dest).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=['get', 'post'], url_path='arbol-backups')
+    def arbol_backups(self, request, pk=None):
+        """GET: lista copias de seguridad del proyecto. POST: crea una nueva."""
+        from django.utils import timezone
+
+        from .dimension_clone_service import serialize_dimension
+        from .models import ArbolBackup, Omoe
+
+        proyecto = self.get_object()
+
+        if request.method == 'GET':
+            items = [
+                self._arbol_backup_dict(b)
+                for b in ArbolBackup.objects.filter(proyecto=proyecto)
+            ]
+            return Response({'items': items, 'count': len(items)})
+
+        if not can_write_resource(request.user, proyecto, 'omoe'):
+            return Response(
+                {'detail': 'Sin permiso para crear copias de seguridad.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            omoe_id = int(request.data.get('omoe_id'))
+        except (TypeError, ValueError):
+            return Response(
+                {'omoe_id': ['Indique la dimensión a respaldar.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        omoe = Omoe.objects.filter(pk=omoe_id, proyecto=proyecto).first()
+        if omoe is None:
+            return Response(
+                {'detail': 'Dimensión no encontrada en este proyecto.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        data = serialize_dimension(omoe)
+        nombre = (request.data.get('nombre') or '').strip()
+        if not nombre:
+            nombre = f'{omoe.nombre_modelo} — {timezone.localtime():%Y-%m-%d %H:%M}'
+        backup = ArbolBackup.objects.create(
+            proyecto=proyecto,
+            nombre=nombre[:200],
+            descripcion=(request.data.get('descripcion') or '')[:2000],
+            omoe_nombre=omoe.nombre_modelo or '',
+            rama_evaluacion=omoe.rama_evaluacion or '',
+            nodos_count=len(data.get('nodos') or []),
+            data=data,
+            creado_por=request.user if request.user.is_authenticated else None,
+        )
+        return Response(self._arbol_backup_dict(backup), status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=r'arbol-backups/(?P<backup_id>[0-9]+)/restaurar',
+    )
+    def restaurar_arbol_backup(self, request, pk=None, backup_id=None):
+        """Restaura una copia de seguridad: reconstruye la dimensión en el proyecto."""
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from .dimension_clone_service import rebuild_dimension_from_data
+        from .models import ArbolBackup, Omoe
+        from .omoe_serializers import OmoeSerializer
+
+        proyecto = self.get_object()
+        if not can_write_resource(request.user, proyecto, 'omoe'):
+            return Response(
+                {'detail': 'Sin permiso para restaurar copias de seguridad.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        backup = ArbolBackup.objects.filter(pk=backup_id, proyecto=proyecto).first()
+        if backup is None:
+            return Response(
+                {'detail': 'Copia de seguridad no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        nombre = request.data.get('nombre_modelo') if isinstance(request.data, dict) else None
+        try:
+            result = rebuild_dimension_from_data(backup.data, proyecto, nombre_modelo=nombre)
+        except DjangoValidationError as exc:
+            msg = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        dest = Omoe.objects.prefetch_related(*OMOE_TREE_PREFETCH).get(pk=result['omoe_id'])
+        return Response(
+            {**result, 'omoe': OmoeSerializer(dest).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True,
+        methods=['delete'],
+        url_path=r'arbol-backups/(?P<backup_id>[0-9]+)',
+    )
+    def eliminar_arbol_backup(self, request, pk=None, backup_id=None):
+        """Elimina una copia de seguridad."""
+        from .models import ArbolBackup
+
+        proyecto = self.get_object()
+        if not can_write_resource(request.user, proyecto, 'omoe'):
+            return Response(
+                {'detail': 'Sin permiso para eliminar copias de seguridad.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        deleted, _ = ArbolBackup.objects.filter(pk=backup_id, proyecto=proyecto).delete()
+        if not deleted:
+            return Response(
+                {'detail': 'Copia de seguridad no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @action(detail=True, methods=['get', 'put'], url_path='niveles-arbol')
     def niveles_arbol(self, request, pk=None):
         from django.core.exceptions import ValidationError as DjangoValidationError

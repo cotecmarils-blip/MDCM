@@ -178,6 +178,19 @@ export const proyectos = {
     }),
   catalogoDimensiones: (id) => api.get(`/proyectos/${id}/catalogo-dimensiones/`),
   importarDimension: (id, data) => api.post(`/proyectos/${id}/importar-dimension/`, data),
+  exportArbol: (id, omoeId) =>
+    api.get(`/proyectos/${id}/export-arbol/`, {
+      params: omoeId ? { omoe: omoeId } : {},
+      responseType: 'blob',
+    }),
+  importarArbolJson: (id, data) =>
+    api.post(`/proyectos/${id}/importar-arbol-json/`, data),
+  listArbolBackups: (id) => api.get(`/proyectos/${id}/arbol-backups/`),
+  crearArbolBackup: (id, data) => api.post(`/proyectos/${id}/arbol-backups/`, data),
+  restaurarArbolBackup: (id, backupId, data = {}) =>
+    api.post(`/proyectos/${id}/arbol-backups/${backupId}/restaurar/`, data),
+  eliminarArbolBackup: (id, backupId) =>
+    api.delete(`/proyectos/${id}/arbol-backups/${backupId}/`),
   exportDiagram: (id, omoeId) =>
     api.get(`/proyectos/${id}/export/diagram/`, {
       params: omoeId ? { omoe: omoeId } : {},

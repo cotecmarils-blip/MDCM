@@ -573,10 +573,10 @@ function EvaluacionPanel({ proyectoId, canWrite = true }) {
                 key: 'alternativas-json',
                 label: exportingAlternativasJson
                   ? 'Exportando…'
-                  : 'Exportar evaluación (JSON)',
+                  : 'Exportar alternativas (JSON)',
                 description:
-                  'Valores (x) cargados por alternativa en formato plano '
-                  + '(tipo oceanographic_alternatives.json).',
+                  'Datos cargados por alternativa (valor x por criterio y escenario) '
+                  + 'en formato plano tipo oceanographic_alternatives.json.',
                 onClick: handleExportAlternativasJson,
                 disabled: exportingAlternativasJson || loadingSchema,
               },

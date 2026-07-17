@@ -1563,3 +1563,33 @@ class InformeProyectoJob(models.Model):
 
     def __str__(self):
         return f'{self.proyecto_id} · {self.estado} · {self.progreso}%'
+
+
+class ArbolBackup(models.Model):
+    """Copia de seguridad (snapshot) de un árbol/dimensión de un proyecto."""
+
+    proyecto = models.ForeignKey(
+        Proyecto, on_delete=models.CASCADE, related_name='arbol_backups',
+    )
+    nombre = models.CharField(max_length=200)
+    descripcion = models.TextField(blank=True, default='')
+    omoe_nombre = models.CharField(max_length=255, blank=True, default='')
+    rama_evaluacion = models.CharField(max_length=64, blank=True, default='')
+    nodos_count = models.PositiveIntegerField(default=0)
+    data = models.JSONField(default=dict)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='arbol_backups',
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Copia de seguridad de árbol'
+        verbose_name_plural = 'Copias de seguridad de árbol'
+        ordering = ['-fecha_creacion', '-id']
+
+    def __str__(self):
+        return f'{self.nombre} · proyecto {self.proyecto_id}'

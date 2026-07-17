@@ -314,6 +314,7 @@ function CriteriosTreeSidebar({
   onAddChild,
   onNewDimension,
   onImportDimension,
+  onManageBackups,
   onConfigureNiveles,
   onReorder,
   loading,
@@ -370,6 +371,15 @@ function CriteriosTreeSidebar({
         >
           Importar árbol desde proyecto
         </button>
+        {onManageBackups && (
+          <button
+            type="button"
+            onClick={onManageBackups}
+            className="btn w-full border-gray-200 dark:border-gray-700/60 text-sm"
+          >
+            Copias de seguridad / JSON
+          </button>
+        )}
         <button
           type="button"
           onClick={onConfigureNiveles}

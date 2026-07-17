@@ -6,6 +6,7 @@ import CriteriosTreeSidebar from './CriteriosTreeSidebar';
 import CriterioDetailPanel from './CriterioDetailPanel';
 import EscenarioGlobalBar from './EscenarioGlobalBar';
 import ImportarDimensionModal from './ImportarDimensionModal';
+import ArbolBackupsModal from './ArbolBackupsModal';
 import NivelesArbolConfig from './NivelesArbolConfig';
 import TipoNivelPickerModal from './TipoNivelPickerModal';
 import { resolveEditSelection } from './treeUtils';
@@ -43,6 +44,7 @@ function CriteriosPanel({ proyectoId }) {
     dimensionRama: null,
   });
   const [importOpen, setImportOpen] = useState(false);
+  const [backupsOpen, setBackupsOpen] = useState(false);
   const [importCatalog, setImportCatalog] = useState([]);
   const [importLoading, setImportLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -266,6 +268,21 @@ function CriteriosPanel({ proyectoId }) {
     }
   };
 
+  const handleArbolRestored = async (result) => {
+    const data = await loadTree();
+    const created = result?.omoe || data.find((d) => d.id === result?.omoe_id);
+    if (created) {
+      setSelection({
+        mode: 'edit',
+        level: CRITERIO_LEVELS.OMOE,
+        node: created,
+        siblings: data,
+        parentId: null,
+        dimensionRama: effectiveOmoeRama(created),
+      });
+    }
+  };
+
   const handleAddChild = (parentLevel, parentNode) => {
     const rama = resolveChildRama(parentLevel, parentNode);
     const nivelesRama = nivelesForRama(rama);
@@ -403,6 +420,7 @@ function CriteriosPanel({ proyectoId }) {
               onAddChild={handleAddChild}
               onNewDimension={handleNewDimension}
               onImportDimension={handleOpenImportDimension}
+              onManageBackups={() => setBackupsOpen(true)}
               onConfigureNiveles={() => setConfigOpen(true)}
               onReorder={handleReorderNodes}
               loading={loading}
@@ -474,6 +492,17 @@ function CriteriosPanel({ proyectoId }) {
         error={importError}
         onClose={() => !importing && setImportOpen(false)}
         onImport={handleImportDimension}
+      />
+
+      <ArbolBackupsModal
+        open={backupsOpen}
+        proyectoId={proyectoId}
+        dimensiones={forest.map((o) => ({
+          id: o.id,
+          nombre: o.nombre_modelo || nodeName(o),
+        }))}
+        onClose={() => setBackupsOpen(false)}
+        onRestored={handleArbolRestored}
       />
     </div>
   );
