@@ -1,0 +1,461 @@
+Detecting language using up to the first 30 seconds. Use `--language` to specify the language
+Detected language: Spanish
+[00:00.000 --> 00:08.000]  La etapa número uno, de acuerdo con el mensaje, es que voy a tener la gráfica de los árboles dimensionales, así que no me acabo de explicarlo.
+[00:08.000 --> 00:17.000]  Es decir, por cada dimensión, tiene su gráfica. La pregunta es, ¿Quieres que salgan con peso o sin peso?
+[00:17.000 --> 00:22.000]  Las dos. Imagina sin peso y las con peso, por si las moscas no salgan.
+[00:22.000 --> 00:26.000]  ¿Ese informe va a ser grandísimo? Sí, va a ser grandísimo, no importa.
+[00:26.000 --> 00:34.000]  Con peso y sin peso, ambas imágenes, no es que si usaron las cosas, no, no, que el informe se bote completo.
+[00:34.000 --> 00:36.000]  Eso va a ser para cada dimensión.
+[00:36.000 --> 00:38.000]  Y por cada dimensión.
+[00:38.000 --> 00:41.000]  Cada escenario, cada escenario.
+[00:41.000 --> 00:47.000]  O sea, si tengo cuatro escenarios, me saldrían cuatro árboles cada uno con sus pesos.
+[00:47.000 --> 00:48.000]  Este es homoé.
+[00:48.000 --> 00:49.000]  Si no, no tiene sentido que lo imprimamos.
+[00:49.000 --> 00:55.000]  Este homoé tiene cinco escenarios, entonces saldrían el estándar más los cinco escenarios.
+[00:55.000 --> 00:57.000]  Serían seis gráficos.
+[00:57.000 --> 01:00.000]  ¿Cómo cuánto de escenario puede que tenga? Tendría dos.
+[01:00.000 --> 01:03.000]  Tendría dimensión con dos escenarios.
+[01:03.000 --> 01:04.000]  La saldrían tres.
+[01:04.000 --> 01:12.000]  Ahora, como se duplica, lo único que no va a tener peso es el estándar porque es el completo, no tendría peso.
+[01:12.000 --> 01:14.000]  O sea, ya esa imagen está dentro del software.
+[01:14.000 --> 01:17.000]  Nos vamos a hacer un proceso que se automatiza y se coloquen todas.
+[01:17.000 --> 01:19.000]  Eso es nada más la primera parte.
+[01:19.000 --> 01:23.000]  La parte que dice es con gráficas de los árboles dimensionales por cada escenario.
+[01:23.000 --> 01:25.000]  ¿Qué viene ahora?
+[01:25.000 --> 01:27.000]  Esto es, lleguimos a la primera tabla.
+[01:27.000 --> 01:29.000]  Estos son diagramas.
+[01:29.000 --> 01:31.000]  Unos diagramas.
+[01:31.000 --> 01:33.000]  Importante.
+[01:33.000 --> 01:34.000]  Número dos.
+[01:34.000 --> 01:37.000]  Tenemos definición de las alternativas.
+[01:37.000 --> 01:45.000]  En el módulo alternativas, en el módulo donde creamos cada alternativa, le colocamos una descripción, una fotico y ya.
+[01:45.000 --> 01:46.000]  Lo que se pueda colocar.
+[01:46.000 --> 01:48.000]  La idea es que sea aquí lo que tiene cada alternativa.
+[01:48.000 --> 01:51.000]  A que implima toda la información que tenemos relacionada a las alternativas.
+[01:51.000 --> 01:52.000]  Exactamente.
+[01:52.000 --> 01:55.000]  En este mismo orden que estoy presentando.
+[01:55.000 --> 01:56.000]  Tercero.
+[01:56.000 --> 01:58.000]  Definición de alternativas ya en ese segundo.
+[01:58.000 --> 02:00.000]  Tablas de definición de peso por cada nódulo.
+[02:00.000 --> 02:02.000]  Ahora sí.
+[02:02.000 --> 02:04.000]  Esto es lo último que no está ahí aquí.
+[02:04.000 --> 02:06.000]  Que es por cada nódulo.
+[02:06.000 --> 02:08.000]  Yo vengo.
+[02:08.000 --> 02:10.000]  O sea, lo podemos pegar aquí, no sé cómo sea.
+[02:10.000 --> 02:11.000]  Por cada nódulo.
+[02:11.000 --> 02:13.000]  Venir y explicar más o menos.
+[02:13.000 --> 02:15.000]  Esto es lo que tú sabes que tiene Kevin.
+[02:15.000 --> 02:18.000]  Que tiene todo el árbol de closado por cada dimensión.
+[02:18.000 --> 02:21.000]  Dimensión y explicando cada nódulo que consiste.
+[02:21.000 --> 02:23.000]  Esa tabla es la que veo complicada.
+[02:23.000 --> 02:24.000]  Es una tabla.
+[02:24.000 --> 02:26.000]  ¿Qué se me ocurre a mí?
+[02:26.000 --> 02:29.000]  Se supone que el árbol a nivel de jerarquía se ve así.
+[02:29.000 --> 02:32.000]  Uno, dos, tres.
+[02:32.000 --> 02:34.000]  Algo así cierto.
+[02:34.000 --> 02:37.000]  Es una gran agua, hermano.
+[02:37.000 --> 02:38.000]  Te contesto.
+[02:38.000 --> 02:41.000]  Lo que hay que hacer.
+[02:41.000 --> 02:44.000]  Lo que me ocurre a mí es que esto puede ser una tablita.
+[02:44.000 --> 02:46.000]  Donde la tablita sea por ejemplo.
+[02:46.000 --> 02:49.000]  Grupo de afinidad.
+[02:49.000 --> 02:52.000]  Aquí entonces tenga el grupo de afinidad uno.
+[02:52.000 --> 02:53.000]  Y el grupo de afinidad dos.
+[02:53.000 --> 02:54.000]  Una tablita.
+[02:54.000 --> 02:55.000]  ¿Sabes?
+[02:55.000 --> 02:56.000]  Aquí.
+[02:56.000 --> 02:57.000]  Dentro de la segunda.
+[02:57.000 --> 02:58.000]  Esto se vuelve una columna.
+[02:58.000 --> 03:00.000]  Esto serían los MOBs.
+[03:00.000 --> 03:02.000]  Aquí es una columna.
+[03:02.000 --> 03:03.000]  Y esto es una tabla de Word.
+[03:03.000 --> 03:04.000]  Una columna.
+[03:04.000 --> 03:05.000]  Segunda en esto de los MOBs.
+[03:05.000 --> 03:06.000]  Y por cada uno la información.
+[03:06.000 --> 03:07.000]  Dos puntitos la información.
+[03:07.000 --> 03:08.000]  Por ejemplo.
+[03:08.000 --> 03:09.000]  ¿Qué tendría un MOB?
+[03:09.000 --> 03:10.000]  El nombre.
+[03:10.000 --> 03:13.000]  Y la tercera columna vendría siendo los DT.
+[03:13.000 --> 03:17.000]  Que es donde se pone el nombre, la función y sus valores.
+[03:17.000 --> 03:19.000]  Primera columna es.
+[03:19.000 --> 03:20.000]  Grupo de afinidad.
+[03:20.000 --> 03:21.000]  Ok.
+[03:21.000 --> 03:23.000]  Y la siguiente.
+[03:23.000 --> 03:24.000]  Los MOBs.
+[03:24.000 --> 03:25.000]  Así de acuerdo con el mismo nivel.
+[03:25.000 --> 03:26.000]  Ok.
+[03:26.000 --> 03:28.000]  Tendría yo que agrupar las celdas.
+[03:28.000 --> 03:29.000]  Exactamente.
+[03:29.000 --> 03:34.000]  O sea empiezan todos con el valor del padre.
+[03:34.000 --> 03:35.000]  Poder decirlo de alguna manera.
+[03:35.000 --> 03:36.000]  Todos quedan.
+[03:36.000 --> 03:37.000]  Exacto.
+[03:37.000 --> 03:38.000]  Es que ya la tienes tú.
+[03:38.000 --> 03:40.000]  Pero la tienes sin los datos específicos.
+[03:40.000 --> 03:42.000]  Ya está exportando.
+[03:42.000 --> 03:43.000]  Y aquí sería la misión.
+[03:43.000 --> 03:44.000]  El nombre del escenario.
+[03:44.000 --> 03:45.000]  Perdón.
+[03:45.000 --> 03:49.000]  Porque sabes que todos estos serían para el escenario uno.
+[03:49.000 --> 03:50.000]  Cierto.
+[03:50.000 --> 03:52.000]  En el escenario dos y así sucesivamente.
+[03:52.000 --> 03:54.000]  Estás en orden de jerarquía en como ocurre la cuestión.
+[03:54.000 --> 03:55.000]  Cierto.
+[03:56.000 --> 03:57.000]  Te perdon.
+[03:57.000 --> 03:59.000]  Esto está complejo entonces.
+[03:59.000 --> 04:00.000]  Primero es el escenario.
+[04:00.000 --> 04:02.000]  No me refiero a eso.
+[04:02.000 --> 04:04.000]  La carga de todo.
+[04:04.000 --> 04:06.000]  El escenario y la dimensión.
+[04:07.000 --> 04:08.000]  Eso ya lo tienes.
+[04:08.000 --> 04:11.000]  Tú no viste que esa tabla ya la hiciste con los muebles.
+[04:11.000 --> 04:13.000]  Y el escenario no lo tienes aquí.
+[04:13.000 --> 04:16.000]  No, pero esto se va a cargar para todas las dimensiones.
+[04:16.000 --> 04:17.000]  A todas las dimensiones.
+[04:17.000 --> 04:19.000]  Pero si ya la hiciste para la más grande.
+[04:19.000 --> 04:20.000]  Bueno.
+[04:20.000 --> 04:23.000]  Si ya la hiciste para la más grande que es la que siempre se sobrecarga.
+[04:23.000 --> 04:25.000]  Que es la del ser más.
+[04:25.000 --> 04:28.000]  Eso me refiero con la tabla de definición.
+[04:28.000 --> 04:30.000]  De peso por cada nodo.
+[04:30.000 --> 04:32.000]  Esta es la tabla de definición.
+[04:32.000 --> 04:33.000]  La tabla de definición.
+[04:33.000 --> 04:36.000]  Y entonces se va a organizar el documento de ahí.
+[04:36.000 --> 04:38.000]  De, este...
+[04:38.000 --> 04:39.000]  ¿Gres?
+[04:39.000 --> 04:40.000]  A eso.
+[04:40.000 --> 04:42.000]  A la definición de eso.
+[04:42.000 --> 04:45.000]  Y funciona de utilidad.
+[04:45.000 --> 04:48.000]  La función de utilidad se define en el nodo más grande.
+[04:48.000 --> 04:50.000]  El nombre y los parámetros que tiene.
+[04:50.000 --> 04:51.000]  Cierto.
+[04:53.000 --> 04:55.000]  Tiene que aparecer en la tabla.
+[04:55.000 --> 04:57.000]  El nombre, nada más el nombre.
+[04:57.000 --> 04:58.000]  Ah, el nombre y la función de utilidad.
+[04:58.000 --> 04:59.000]  Nada más el nombre.
+[04:59.000 --> 05:00.000]  Aquí no hay gráfica.
+[05:00.000 --> 05:02.000]  Nada más son nombre, texto.
+[05:02.000 --> 05:04.000]  Ahora ahí sigue lo complicado.
+[05:04.000 --> 05:05.000]  La etapa dos.
+[05:05.000 --> 05:06.000]  Evaluaciones.
+[05:06.000 --> 05:08.000]  La etapa dos son las evaluaciones.
+[05:08.000 --> 05:09.000]  Es decir.
+[05:09.000 --> 05:11.000]  Lo que nosotros tenemos es el módulo de evaluaciones.
+[05:11.000 --> 05:13.000]  Colocarlo en una tabla.
+[05:13.000 --> 05:14.000]  Por cada alternativa.
+[05:14.000 --> 05:16.000]  Así literalmente como lo tenemos.
+[05:16.000 --> 05:17.000]  Los resultados.
+[05:17.000 --> 05:18.000]  Exactamente.
+[05:18.000 --> 05:21.000]  Las evaluaciones por cada alternativa.
+[05:21.000 --> 05:23.000]  Tengo cinco alternativas que estoy haciendo.
+[05:23.000 --> 05:27.000]  El módulo de evaluaciones es donde yo cargo las variables.
+[05:27.000 --> 05:28.000]  Donde yo cargo las variables.
+[05:28.000 --> 05:29.000]  Donde yo cargo la entrada.
+[05:29.000 --> 05:31.000]  Solamente me interesa que aparezca el nuevo terminal.
+[05:31.000 --> 05:33.000]  Así tal cual con las variables de entrada.
+[05:33.000 --> 05:34.000]  Ya.
+[05:34.000 --> 05:35.000]  Se caigan por misión también.
+[05:35.000 --> 05:36.000]  Así igualito.
+[05:36.000 --> 05:38.000]  En misión me aparecen todas las dimensiones.
+[05:38.000 --> 05:40.000]  Con los respectivos.
+[05:46.000 --> 05:47.000]  Actualmente.
+[05:47.000 --> 05:49.000]  No está habiéndose.
+[05:50.000 --> 05:51.000]  La relación es esta.
+[05:51.000 --> 05:52.000]  Y.
+[05:52.000 --> 05:53.000]  L.
+[05:53.000 --> 05:54.000]  Q.
+[05:54.000 --> 05:55.000]  E.
+[05:55.000 --> 05:56.000]  O.
+[05:56.000 --> 05:57.000]  Delta.
+[05:57.000 --> 05:59.000]  ¿Qué significa esto?
+[05:59.000 --> 06:01.000]  Esto es una evaluación.
+[06:01.000 --> 06:03.000]  Que se va haciendo para cada alternativa.
+[06:03.000 --> 06:05.000]  ¿Cierto?
+[06:05.000 --> 06:07.000]  Nosotros estamos haciendo el reje en el sofá.
+[06:07.000 --> 06:11.000]  Nosotros estamos revisando la alternativa.
+[06:11.000 --> 06:13.000]  Y en función de la.
+[06:13.000 --> 06:15.000]  De la que?
+[06:15.000 --> 06:17.000]  De la evaluación que tenemos que hacer.
+[06:17.000 --> 06:19.000]  Porque.
+[06:19.000 --> 06:21.000]  Cuando yo construyo una matriz.
+[06:21.000 --> 06:23.000]  Cuando yo construyo una matriz.
+[06:23.000 --> 06:25.000]  Cuando yo construyo una matriz.
+[06:25.000 --> 06:27.000]  Entonces lo que estamos haciendo actualmente es.
+[06:27.000 --> 06:29.000]  Alternativa 1 y todos sus datos.
+[06:29.000 --> 06:31.000]  ¿Cierto?
+[06:31.000 --> 06:33.000]  Alternativa 1 y todos sus datos.
+[06:33.000 --> 06:35.000]  Sin embargo ahí yo no puedo comparar.
+[06:35.000 --> 06:37.000]  Ahí yo no puedo comparar.
+[06:37.000 --> 06:39.000]  Bueno.
+[06:39.000 --> 06:41.000]  Esta señora me permite comparar.
+[06:41.000 --> 06:43.000]  Yo tengo el dato X.
+[06:43.000 --> 06:45.000]  El nuevo terminal no se.
+[06:45.000 --> 06:47.000]  DT1.
+[06:47.000 --> 06:49.000]  Para el escenario 1.
+[06:49.000 --> 06:51.000]  De Omoe.
+[06:51.000 --> 06:53.000]  ¿Y visualmente como las compara?
+[06:53.000 --> 06:55.000]  Ya te voy a mostrar.
+[06:55.000 --> 06:57.000]  Y esta seria la alternativa 1.
+[06:57.000 --> 06:59.000]  Y esta seria la alternativa 2.
+[06:59.000 --> 07:01.000]  DT1.
+[07:01.000 --> 07:03.000]  Esto seria el valor que ingresa.
+[07:03.000 --> 07:05.000]  Esto seria el valor que ingresa.
+[07:05.000 --> 07:07.000]  Por ejemplo en movilidad.
+[07:07.000 --> 07:09.000]  Esto seria de 50.
+[07:09.000 --> 07:11.000]  Esto seria de 80.
+[07:11.000 --> 07:13.000]  Pero esto lo que me afina me queda.
+[07:13.000 --> 07:15.000]  Es una matriz de entrada.
+[07:15.000 --> 07:17.000]  Donde me queda por cada alternativa.
+[07:17.000 --> 07:19.000]  Alternativa 1.
+[07:19.000 --> 07:21.000]  2, 3, 4.
+[07:21.000 --> 07:23.000]  ¿Cuanto vale en ese punto?
+[07:23.000 --> 07:25.000]  Es decir la movilidad de la 1 vale 70.
+[07:25.000 --> 07:27.000]  Esta es la 40, 50, 60.
+[07:27.000 --> 07:29.000]  ¿Como estamos actualmente nosotros?
+[07:29.000 --> 07:31.000]  Nosotros estamos al revés.
+[07:31.000 --> 07:33.000]  Nosotros tenemos una alternativa con todos sus datos.
+[07:35.000 --> 07:37.000]  Entonces es difícil ver que tiene cada una.
+[07:37.000 --> 07:39.000]  Porque cada vez que yo quiero ver que coloco en movilidad.
+[07:39.000 --> 07:41.000]  La B.
+[07:41.000 --> 07:43.000]  Me toca irme para la B y volver a buscar el dato.
+[07:43.000 --> 07:45.000]  Pero si yo estoy viendo eso por el dato.
+[07:45.000 --> 07:47.000]  Yo veo el dato 1.
+[07:47.000 --> 07:49.000]  Y me salen todas las alternativas.
+[07:49.000 --> 07:51.000]  Cambia la organización.
+[07:51.000 --> 07:53.000]  Del software nada mas de las tablas.
+[07:53.000 --> 07:55.000]  Así como esta esta perfecto.
+[07:55.000 --> 07:57.000]  A nivel de calculo.
+[07:57.000 --> 07:59.000]  Se va accediendo por alternativas.
+[07:59.000 --> 08:01.000]  El software esta perfecto.
+[08:01.000 --> 08:03.000]  Porque yo te dije.
+[08:03.000 --> 08:05.000]  Yo no puedo llenar físicamente dos alternativas al tiempo.
+[08:05.000 --> 08:07.000]  Me interesa llenar una al tiempo.
+[08:07.000 --> 08:09.000]  Yo tengo la información de una a la vez.
+[08:09.000 --> 08:11.000]  Yo lleno la información a nivel.
+[08:11.000 --> 08:13.000]  Como esta visualmente en el software.
+[08:13.000 --> 08:15.000]  Perfecto.
+[08:15.000 --> 08:17.000]  En la práctica.
+[08:17.000 --> 08:19.000]  A nivel de los cálculos en la práctica.
+[08:19.000 --> 08:21.000]  Me interesa ver por cada criterio.
+[08:21.000 --> 08:23.000]  Por cada no.
+[08:23.000 --> 08:25.000]  Que valen cada alternativa.
+[08:25.000 --> 08:27.000]  Ahora lo que priorizo yo.
+[08:27.000 --> 08:29.000]  No son las alternativas.
+[08:29.000 --> 08:31.000]  Ver las alternativas al tiempo.
+[08:31.000 --> 08:33.000]  Sino ver el dato.
+[08:33.000 --> 08:35.000]  Y ver lo que vale para cada alternativa.
+[08:35.000 --> 08:37.000]  Esto como debería en la práctica.
+[08:37.000 --> 08:39.000]  Supongamos que tenemos.
+[08:39.000 --> 08:41.000]  Para las 5 alternativas.
+[08:41.000 --> 08:43.000]  1,2,3,4,5.
+[08:43.000 --> 08:45.000]  El nivel de aquí.
+[08:45.000 --> 08:47.000]  Cuanto valen en este nivel.
+[08:47.000 --> 08:49.000]  1,2,3,4,5.
+[08:49.000 --> 08:51.000]  1,2,3,4,5.
+[08:51.000 --> 08:53.000]  1,2,3,4,5.
+[08:53.000 --> 08:55.000]  Los datos que tiene cada una de las alternativas.
+[08:55.000 --> 08:57.000]  Eso no va a ser así.
+[08:57.000 --> 08:59.000]  No va a ser así.
+[08:59.000 --> 09:01.000]  Simplemente.
+[09:01.000 --> 09:03.000]  Simplemente lo que podríamos hacer.
+[09:03.000 --> 09:05.000]  Y tu que opinas.
+[09:05.000 --> 09:07.000]  Partir de esto.
+[09:07.000 --> 09:09.000]  Visualmente.
+[09:09.000 --> 09:11.000]  Antes teníamos el listado.
+[09:11.000 --> 09:13.000]  Todo esto que estamos haciendo.
+[09:13.000 --> 09:15.000]  Es un documento.
+[09:15.000 --> 09:17.000]  No cambia visualmente.
+[09:17.000 --> 09:19.000]  Perfecto.
+[09:19.000 --> 09:21.000]  Esto es como se va a aportar.
+[09:21.000 --> 09:23.000]  Estos diagramas.
+[09:23.000 --> 09:25.000]  Imagencitas.
+[09:25.000 --> 09:27.000]  Formato PNG.
+[09:27.000 --> 09:29.000]  Las alternativas.
+[09:29.000 --> 09:31.000]  Hablamos que explicar lo que está escrito.
+[09:31.000 --> 09:33.000]  Bonito.
+[09:33.000 --> 09:35.000]  Tabla de...
+[09:35.000 --> 09:37.000]  Bautista.
+[09:37.000 --> 09:39.000]  La tabla de...
+[09:39.000 --> 09:41.000]  Tabla de definición de pesos.
+[09:41.000 --> 09:43.000]  Tabla de definición de pesos.
+[09:43.000 --> 09:45.000]  Aquí donde ponemos el peso por cada uno de los...
+[09:45.000 --> 09:47.000]  El nombre...
+[09:47.000 --> 09:49.000]  Lo que tienen en formación nodos.
+[09:49.000 --> 09:51.000]  Lo que tienen los nodos.
+[09:51.000 --> 09:53.000]  Ejemplo, el nodo de grupo finidad.
+[09:53.000 --> 09:55.000]  ¿Cómo se llama el grupo finidad? 1, movilidad.
+[09:55.000 --> 09:57.000]  ¿Qué tiene adentro a movilidad?
+[09:57.000 --> 09:59.000]  1,2,3,4,5.
+[09:59.000 --> 10:01.000]  Eso si ya lo tengo claro.
+[10:01.000 --> 10:03.000]  Eso se llama tabla de definición.
+[10:03.000 --> 10:05.000]  Tabla de definición.
+[10:05.000 --> 10:07.000]  Eso es definición.
+[10:07.000 --> 10:09.000]  Ajá.
+[10:09.000 --> 10:11.000]  Esto es para poder ver...
+[10:11.000 --> 10:13.000]  Los datos que tiene cada nodo.
+[10:13.000 --> 10:15.000]  Cada alternativo.
+[10:15.000 --> 10:17.000]  Es una tabla inmensa.
+[10:17.000 --> 10:19.000]  Lo máximo que tienen son 12 nodos...
+[10:19.000 --> 10:21.000]  Terminales.
+[10:21.000 --> 10:23.000]  En nuestro caso...
+[10:23.000 --> 10:25.000]  Va a tocar hablar de continuación.
+[10:25.000 --> 10:27.000]  Una sola tablita va a caber a la vez.
+[10:27.000 --> 10:29.000]  Coloquemos los nodos...
+[10:29.000 --> 10:31.000]  Terminales por dimensión.
+[10:31.000 --> 10:33.000]  Por ejemplo, la dimensión de...
+[10:33.000 --> 10:35.000]  Y ahora por escenario.
+[10:35.000 --> 10:37.000]  Esta sería...
+[10:37.000 --> 10:39.000]  Tabla por escenario.
+[10:39.000 --> 10:41.000]  Esta sería la tabla por escenario 1.
+[10:41.000 --> 10:43.000]  Con sus 12 nodos terminales.
+[10:43.000 --> 10:45.000]  Esta sería la tabla de escenario 2.
+[10:45.000 --> 10:47.000]  Para la dimensión MOE.
+[10:47.000 --> 10:49.000]  Con sus 12 nodos terminales.
+[10:49.000 --> 10:51.000]  ¿Qué vamos a entender?
+[10:51.000 --> 10:53.000]  Y ahí solamente son valores de entrada.
+[10:53.000 --> 10:55.000]  Aquí que lo estamos listando...
+[10:55.000 --> 10:57.000]  Son las alternativas.
+[10:57.000 --> 10:59.000]  Porque en el software actualmente...
+[10:59.000 --> 11:01.000]  En el eje Y las alternativas.
+[11:01.000 --> 11:03.000]  En el eje X los nodos terminales.
+[11:05.000 --> 11:07.000]  La tabla se hace por escenario.
+[11:09.000 --> 11:11.000]  Y las dimensiones.
+[11:11.000 --> 11:13.000]  Se saca una tabla por dimensión.
+[11:15.000 --> 11:17.000]  Se saca una sección.
+[11:21.000 --> 11:23.000]  Como todas sus alternativas evaluadas...
+[11:23.000 --> 11:25.000]  En cada nodo terminal.
+[11:25.000 --> 11:27.000]  Con su respectivo escenario 1.
+[11:27.000 --> 11:29.000]  Este nombre que sea el nombre puntual...
+[11:29.000 --> 11:31.000]  Que la persona le crea.
+[11:31.000 --> 11:33.000]  El nombre puntual que la persona le crea.
+[11:33.000 --> 11:35.000]  El nombre del escenario.
+[11:35.000 --> 11:37.000]  Y no queremos abreviaturas.
+[11:37.000 --> 11:39.000]  Esas son las evaluaciones.
+[11:39.000 --> 11:41.000]  Eso me refiero con evaluaciones.
+[11:41.000 --> 11:43.000]  Estas son todas las tablas con los datos.
+[11:47.000 --> 11:49.000]  Y finalmente...
+[11:49.000 --> 11:51.000]  Aquí viene...
+[11:51.000 --> 11:53.000]  La matriz ruta.
+[11:53.000 --> 11:55.000]  ¿Sabes cuál es?
+[11:55.000 --> 11:57.000]  Es la matriz que se le ocurre...
+[11:57.000 --> 11:59.000]  La que me da el cálculo al principio.
+[11:59.000 --> 12:01.000]  Ajá, la que te da el cálculo al principio.
+[12:01.000 --> 12:03.000]  Que es cuando ya sale...
+[12:03.000 --> 12:05.000]  Sin comparación.
+[12:05.000 --> 12:07.000]  Esa matriz debe entrar ahí.
+[12:07.000 --> 12:09.000]  Esa matriz debe entrar ahí.
+[12:11.000 --> 12:13.000]  Este es el informe estándar.
+[12:13.000 --> 12:15.000]  La estructura del documento estándar.
+[12:15.000 --> 12:17.000]  De aquí para adelante.
+[12:17.000 --> 12:19.000]  Podríamos decir que es la tapa 3.
+[12:19.000 --> 12:21.000]  Viene siendo...
+[12:21.000 --> 12:23.000]  Lo que recopile...
+[12:23.000 --> 12:25.000]  Dentro del módulo de simulaciones.
+[12:25.000 --> 12:27.000]  Si cogió pareto o no...
+[12:27.000 --> 12:29.000]  Que salga a tablito.
+[12:29.000 --> 12:31.000]  Todo el procedimiento después de eso.
+[12:31.000 --> 12:33.000]  Exactamente.
+[12:33.000 --> 12:35.000]  Si se normaliza, cuál es la matriz de normalización.
+[12:35.000 --> 12:37.000]  Y el nombre del método.
+[12:37.000 --> 12:39.000]  ¿Con qué comienza?
+[12:39.000 --> 12:41.000]  Dimensiones, sentidos de preferencia,
+[12:41.000 --> 12:43.000]  Max, Men, dimensiones activas.
+[12:43.000 --> 12:45.000]  Esto lo exporto...
+[12:45.000 --> 12:47.000]  Lo exporto por cálculo.
+[12:49.000 --> 12:51.000]  Entro al cálculo que realicé.
+[12:51.000 --> 12:53.000]  Y ahí es donde lo voy a exportar.
+[12:53.000 --> 12:55.000]  Voy a exportar y me sale todo el documento.
+[12:55.000 --> 12:57.000]  Porque es que estamos tomando los datos
+[12:57.000 --> 12:59.000]  de un cálculo, un experimento.
+[12:59.000 --> 13:01.000]  Esto puede ser un informe.
+[13:01.000 --> 13:03.000]  La tapa 1, la tapa 2, un informe.
+[13:03.000 --> 13:05.000]  La tapa 1, la tapa 2, un informe.
+[13:05.000 --> 13:07.000]  Exacto. Informe 1 que es donde está
+[13:07.000 --> 13:09.000]  toda la información que no cambia.
+[13:09.000 --> 13:11.000]  Técnicamente no cambia.
+[13:11.000 --> 13:13.000]  ¿Dónde sí pueden cambiar las cosas?
+[13:13.000 --> 13:15.000]  Aquí. Y este es el que pueda...
+[13:15.000 --> 13:17.000]  O sea, en esto sirve un informe que el usuario
+[13:17.000 --> 13:19.000]  va a poder descargar en alguna parte.
+[13:19.000 --> 13:21.000]  Y este que se va a habilitar.
+[13:21.000 --> 13:23.000]  Voy a llamarlo informe de...
+[13:25.000 --> 13:27.000]  de proyecto.
+[13:27.000 --> 13:29.000]  Informe de proyecto.
+[13:29.000 --> 13:31.000]  Que es el que tiene todo el compuesto
+[13:31.000 --> 13:33.000]  de todo el compuesto.
+[13:33.000 --> 13:35.000]  Y el anelso
+[13:35.000 --> 13:37.000]  viene siendo el
+[13:37.000 --> 13:39.000]  informe de resultados.
+[13:39.000 --> 13:41.000]  El informe de resultados.
+[13:41.000 --> 13:43.000]  Es el que puede hacerse
+[13:43.000 --> 13:45.000]  por cada una de las
+[13:45.000 --> 13:47.000]  posibles simulaciones.
+[13:47.000 --> 13:49.000]  Cuando yo entro a mi cálculo...
+[13:49.000 --> 13:51.000]  No, que por cada uno.
+[13:51.000 --> 13:53.000]  Yo selecciono.
+[13:53.000 --> 13:55.000]  Me lo vota
+[13:55.000 --> 13:57.000]  un informe por
+[13:57.000 --> 13:59.000]  cálculo que yo selecciono.
+[13:59.000 --> 14:01.000]  Si tengo 5 en mi memoria,
+[14:01.000 --> 14:03.000]  selecciono el que yo quiero en el cuarto
+[14:03.000 --> 14:05.000]  y ese es el que va a votarme.
+[14:05.000 --> 14:07.000]  Lo primero que seleccionamos es
+[14:07.000 --> 14:09.000]  nombre, nombre de los cálculos.
+[14:09.000 --> 14:11.000]  Vamos a colocarlo.
+[14:11.000 --> 14:13.000]  Después viene el tema de... aquí tenemos el software.
+[14:13.000 --> 14:15.000]  Aquí viene
+[14:15.000 --> 14:17.000]  el tema de
+[14:17.000 --> 14:19.000]  filtro de pareto.
+[14:19.000 --> 14:21.000]  Si colocó pareto, no colocó pareto y es para ordenar error.
+[14:21.000 --> 14:23.000]  Matriz normalizada.
+[14:23.000 --> 14:25.000]  El método que selecciono.
+[14:25.000 --> 14:27.000]  Con ecuación y todo.
+[14:27.000 --> 14:29.000]  Si, con ecuación y todo.
+[14:29.000 --> 14:31.000]  La ecuación, el método que selecciono
+[14:31.000 --> 14:33.000]  y la matriz como quedó.
+[14:33.000 --> 14:35.000]  Todo super explicado así como científico.
+[14:35.000 --> 14:37.000]  Pesos por dimensión.
+[14:37.000 --> 14:39.000]  Pues son los pesos que el usuario coloca
+[14:39.000 --> 14:41.000]  bajo el método que coloque.
+[14:41.000 --> 14:43.000]  Ahora mismo tenemos
+[14:43.000 --> 14:45.000]  unos básicos. Tienen unos cálculos.
+[14:45.000 --> 14:47.000]  Las ecuaciones están.
+[14:47.000 --> 14:49.000]  Las ecuaciones están.
+[14:49.000 --> 14:51.000]  Pero si no, simplemente porta el resultado
+[14:51.000 --> 14:53.000]  de los pesos.
+[14:53.000 --> 14:55.000]  Y finalmente el método
+[14:55.000 --> 14:57.000]  TOPSIS.
+[14:57.000 --> 14:59.000]  Ahí nada más hay que decir el nombre.
+[14:59.000 --> 15:01.000]  Nada más hay que colocar el nombre.
+[15:01.000 --> 15:03.000]  Eso no los he validado, no los he colocado todavía.
+[15:03.000 --> 15:05.000]  Los de Julian.
+[15:05.000 --> 15:07.000]  A ver ocupe que ahora mismo nosotros nos defendemos.
+[15:07.000 --> 15:09.000]  Este informe es lo más importante.
+[15:09.000 --> 15:11.000]  Ok.
+[15:11.000 --> 15:13.000]  Este informe esté listo.
+[15:13.000 --> 15:15.000]  Los capítulos 5 y 6 se podrían ya hacer.
+[15:15.000 --> 15:17.000]  Porque ya lo que se va a hacer
+[15:17.000 --> 15:19.000]  es que se cargue a cada proyecto.
+[15:19.000 --> 15:21.000]  Hay más capítulos.
+[15:21.000 --> 15:23.000]  No.
+[15:23.000 --> 15:25.000]  Ya terminamos.
+[15:25.000 --> 15:27.000]  El resultado que queda que me interesa.
+[15:27.000 --> 15:29.000]  ¿Quieres algún formato específico?
+[15:29.000 --> 15:31.000]  Cotemar armada. Nosotros lo desarrollamos.
+[15:31.000 --> 15:33.000]  Si quieres así como lo están manejando
+[15:33.000 --> 15:35.000]  actualmente.
+[15:35.000 --> 15:37.000]  El que exportase está bueno.
+[15:37.000 --> 15:39.000]  Por el momento pensé que era
+[15:39.000 --> 15:41.000]  la...
+[15:41.000 --> 15:43.000]  Es lo último.
+[15:43.000 --> 15:45.000]  Lo último en la etapa 3
+[15:45.000 --> 15:47.000]  aparecen todos los
+[15:47.000 --> 15:49.000]  posibles gráficos que apliquen.
+[15:49.000 --> 15:51.000]  Exactamente.
+[15:51.000 --> 15:53.000]  Y si hay gráficos que nada más se aplican para dos dimensiones
+[15:53.000 --> 15:55.000]  los pongo comparándolos
+[15:55.000 --> 15:57.000]  entre todas las dimensiones.
+[15:57.000 --> 15:59.000]  Un gráfico de cada dos dimensiones.
+[15:59.000 --> 16:01.000]  Exactamente.
+[16:01.000 --> 16:03.000]  Ok. Ah bueno todos los posibles gráficos.
