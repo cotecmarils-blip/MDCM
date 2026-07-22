@@ -45,7 +45,6 @@ export const FAMILIAS_POR_TIPO = {
   ],
   preferencia_categorias: [
     { value: 'escalas_discretas', label: 'Escalas discretas' },
-    { value: 'tablas_equivalencia', label: 'Tablas de equivalencia' },
   ],
 };
 
@@ -57,7 +56,35 @@ export const FAMILIAS_POR_TIPO = {
 export const LEGACY_FAMILIA_ALIAS = {
   umbral_creciente: 'min_max',
   umbral_decreciente: 'min_max_decreciente',
+  // «Tablas de equivalencia» era idéntica a «Escalas discretas» (mapa discreto
+  // categoría→utilidad). Se fusiona en una sola opción.
+  tablas_equivalencia: 'escalas_discretas',
 };
+
+/**
+ * Migra parámetros de familias legacy al esquema de su equivalente vigente,
+ * para que un criterio guardado conserve sus datos al editarlo.
+ */
+function migrateLegacyParametros(originalFamilia, resolvedFamilia, parametros) {
+  if (!parametros || typeof parametros !== 'object') return parametros;
+  if (originalFamilia === 'tablas_equivalencia' && resolvedFamilia === 'escalas_discretas') {
+    const opciones = parametros.categorias_opciones ?? parametros.estados_opciones;
+    const utilidad = parametros.categorias_utilidad ?? (
+      Array.isArray(parametros.equivalencias)
+        ? parametros.equivalencias.map((r) => ({
+          categoria: r.estado ?? r.categoria,
+          utilidad: r.utilidad,
+        }))
+        : undefined
+    );
+    return {
+      ...parametros,
+      ...(opciones !== undefined ? { categorias_opciones: opciones } : {}),
+      ...(utilidad !== undefined ? { categorias_utilidad: utilidad } : {}),
+    };
+  }
+  return parametros;
+}
 
 export function getFamiliasForTipo(tipo) {
   return FAMILIAS_POR_TIPO[tipo] || [];
@@ -93,9 +120,10 @@ export function normalizeMopCriterioFields(tipo, familia, parametros = null) {
   const aliased = LEGACY_FAMILIA_ALIAS[familia] || familia;
   const valid = familias.some((f) => f.value === aliased);
   const resolvedFamilia = valid ? aliased : familias[0].value;
+  const migratedParams = migrateLegacyParametros(familia, resolvedFamilia, parametros);
   return {
     tipo_criterio: tipo || familias[0] ? tipo : '',
     familia_funciones: resolvedFamilia,
-    parametros_funcion: normalizeParametrosForFamilia(resolvedFamilia, parametros),
+    parametros_funcion: normalizeParametrosForFamilia(resolvedFamilia, migratedParams),
   };
 }

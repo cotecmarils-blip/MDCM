@@ -13,6 +13,8 @@ Leyenda de estado:
   - ``lineal`` — usa `LinearUtilityFunction` (normalización L–U).
   - ``discreta`` — usa `DiscreteUtilityFunction`.
   - ``pendiente`` — parámetros en UI; ecuación específica aún no implementada.
+  - ``legacy`` — retirada del selector (redundante); se remapea a su equivalente
+    vigente al editar y el motor sigue evaluando datos ya guardados.
 """
 
 from __future__ import annotations
@@ -233,7 +235,12 @@ FAMILIA_FUNCIONES_DOC: dict[str, dict[str, Any]] = {
             'u(x) desde tabla estado → utilidad (mapa discreto), igual que Escalas discretas.'
         ),
         'clase_pydecision': 'DiscreteUtilityFunction',
-        'estado': 'discreta',
+        'estado': 'legacy',
+        'notas': (
+            'Fusionada en «Escalas discretas» (misma función discreta). Retirada del '
+            'selector; los criterios antiguos se remapean al editarlos y el motor '
+            'sigue evaluando datos existentes.'
+        ),
     },
 }
 

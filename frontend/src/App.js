@@ -51,6 +51,7 @@ function App() {
               )}
             />
             <Route
+              path="/proyecto/nuevo"
               element={(
                 <ProtectedRoute>
                   <ProjectFormPage />

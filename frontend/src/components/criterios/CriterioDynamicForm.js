@@ -439,10 +439,10 @@ function CriterioDynamicForm({
       ) : (
         <>
           {createStructureHint}
+          {nameBlock}
           {pesoBlock}
           {expertEvalToggleBlock}
           {!showExpertEvalToggle && terminalEvalBlock}
-          {nameBlock}
         </>
       )}
 

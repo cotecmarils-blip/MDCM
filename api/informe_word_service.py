@@ -1352,6 +1352,27 @@ def _render_concept_map_png(
         bbox = font.getbbox('Ághjy')
         return (bbox[3] - bbox[1]) / scale + 4
 
+    def _break_long_word(word: str, font, cap: float) -> list[str]:
+        """Parte por caracteres una palabra que no cabe en `cap` (sin espacios).
+
+        Evita que un nombre/token muy largo desborde y ensanche toda la columna
+        (todas las cajas del nivel comparten ancho), lo que al escalar el PNG a
+        la página dejaba el texto ilegible.
+        """
+        if font.getlength(word) / scale <= cap or len(word) <= 1:
+            return [word]
+        pieces: list[str] = []
+        cur = ''
+        for ch in word:
+            if cur and font.getlength(cur + ch) / scale > cap:
+                pieces.append(cur)
+                cur = ch
+            else:
+                cur += ch
+        if cur:
+            pieces.append(cur)
+        return pieces
+
     def _wrap(text: str, font, cap: float) -> list[str]:
         words = str(text or '—').split()
         if not words:
@@ -1359,12 +1380,15 @@ def _render_concept_map_png(
         lines: list[str] = []
         cur = ''
         for word in words:
-            trial = f'{cur} {word}'.strip()
-            if not cur or font.getlength(trial) / scale <= cap:
-                cur = trial
-            else:
-                lines.append(cur)
-                cur = word
+            # Una palabra sola no debe exceder el ancho disponible: si lo hace,
+            # se parte en fragmentos que sí caben.
+            for piece in _break_long_word(word, font, cap):
+                trial = f'{cur} {piece}'.strip()
+                if not cur or font.getlength(trial) / scale <= cap:
+                    cur = trial
+                else:
+                    lines.append(cur)
+                    cur = piece
         if cur:
             lines.append(cur)
         return lines

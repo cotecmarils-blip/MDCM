@@ -173,16 +173,16 @@ VOP_WRITE_ROLES = WRITE_ROLES | {ProyectoMembership.ROL_OFERTANTE}
 
 
 def can_create_proyecto(user) -> bool:
-    """Super Admin y Gerente pueden crear proyectos; Ingeniero no."""
+    """Super Admin y Gerente pueden crear proyectos; Ingeniero no.
+
+    El cargo «Gerente» (membresía con rol jefe vigente) habilita la creación
+    aunque el usuario además sea Ingeniero/Analista en otro proyecto. Un usuario
+    que solo es Ingeniero (sin ningún cargo Gerente) no puede crear proyectos.
+    """
     if not user.is_authenticated:
         return False
     if is_global_admin(user):
         return True
-    if ProyectoMembership.objects.filter(
-        usuario=user,
-        rol=ProyectoMembership.ROL_ANALISTA,
-    ).filter(valid_membership_q()).exists():
-        return False
     return ProyectoMembership.objects.filter(
         usuario=user,
         rol=ProyectoMembership.ROL_JEFE,
